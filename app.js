@@ -1,5 +1,6 @@
-const STORAGE_KEY = "berichtskatalog-assistent-entries";
 const THEME_KEY = "berichtskatalog-theme";
+const API_BASE_URL =
+  window.location.protocol === "file:" ? "http://127.0.0.1:8000/api" : `${window.location.origin}/api`;
 
 const fieldDefinitions = [
   {
@@ -343,7 +344,9 @@ const appState = {
   currentIndex: 0,
   values: buildInitialValues(),
   otherDetails: {},
-  savedEntries: loadSavedEntries(),
+  savedEntries: [],
+  savedEntriesLoaded: false,
+  savedEntriesError: "",
   theme: loadTheme(),
   status: { message: "", variant: "success" },
   lastSavedSignature: "",
@@ -352,6 +355,7 @@ const appState = {
 applyTheme(appState.theme);
 themeToggle.addEventListener("click", toggleTheme);
 render();
+void initializeSavedEntries();
 
 function buildInitialValues() {
   return fieldDefinitions.reduce((accumulator, field) => {
@@ -360,24 +364,69 @@ function buildInitialValues() {
   }, {});
 }
 
-function loadSavedEntries() {
+async function initializeSavedEntries() {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    appState.savedEntries = await fetchSavedEntries();
+    appState.savedEntriesError = "";
   } catch (error) {
-    return [];
+    appState.savedEntries = [];
+    appState.savedEntriesError =
+      "Gespeicherte Berichte konnten nicht geladen werden. Bitte den lokalen Server starten.";
   }
+
+  appState.savedEntriesLoaded = true;
+  renderSavedEntries();
 }
 
-function persistSavedEntries() {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.savedEntries));
+async function fetchSavedEntries() {
+  const data = await requestJson(`${API_BASE_URL}/reports`);
+  return Array.isArray(data.entries) ? data.entries : [];
+}
+
+async function createSavedEntry(entry) {
+  const data = await requestJson(`${API_BASE_URL}/reports`, {
+    method: "POST",
+    body: JSON.stringify(entry),
+  });
+  return data.entry;
+}
+
+async function removeSavedEntry(entryId) {
+  await requestJson(`${API_BASE_URL}/reports/${encodeURIComponent(entryId)}`, {
+    method: "DELETE",
+  });
+}
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
+  });
+
+  const isJson = response.headers.get("content-type")?.includes("application/json");
+  const payload = isJson ? await response.json() : null;
+
+  if (!response.ok) {
+    const error = new Error(payload?.error || "Server request failed.");
+    error.status = response.status;
+    throw error;
+  }
+
+  return payload ?? {};
 }
 
 function loadTheme() {
-  const stored = window.localStorage.getItem(THEME_KEY);
-  if (stored === "light" || stored === "dark") {
-    return stored;
+  try {
+    const stored = window.localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark") {
+      return stored;
+    }
+  } catch (error) {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
 
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -385,12 +434,17 @@ function loadTheme() {
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  themeToggle.textContent = theme === "dark" ? "Light Mode" : "Dark Mode";
+  // Keep the switch state in sync with the active theme.
+  themeToggle.setAttribute("aria-checked", String(theme === "dark"));
 }
 
 function toggleTheme() {
   appState.theme = appState.theme === "dark" ? "light" : "dark";
-  window.localStorage.setItem(THEME_KEY, appState.theme);
+  try {
+    window.localStorage.setItem(THEME_KEY, appState.theme);
+  } catch (error) {
+    // The theme still changes even if the browser blocks storage.
+  }
   applyTheme(appState.theme);
 }
 
@@ -459,10 +513,11 @@ function renderAssistantContent() {
 
       <div class="actions">
         <button type="button" class="button button--ghost" id="back-button" ${appState.currentIndex === 0 ? "disabled" : ""}>
-          Zurück
+          <span class="button__icon" aria-hidden="true">&larr;</span>
+          <span class="button__label">Zurück</span>
         </button>
         <div class="actions__group">
-          ${currentField.required ? "" : '<button type="button" class="button button--subtle" id="skip-button">Überspringen</button>'}
+          ${currentField.required ? "" : '<button type="button" class="button button--subtle" id="skip-button"><span class="button__icon" aria-hidden="true">&raquo;</span><span class="button__label">Überspringen</span></button>'}
           <button type="submit" class="button button--primary">
             ${appState.currentIndex === visibleFields.length - 1 ? "Zur Zusammenfassung" : "Weiter"}
           </button>
@@ -718,7 +773,8 @@ function renderCompletion() {
 
       <div class="completion-actions">
         <button type="button" class="button button--ghost" id="summary-back-button">
-          Zurück
+          <span class="button__icon" aria-hidden="true">&larr;</span>
+          <span class="button__label">Zurück</span>
         </button>
         <button type="button" class="button button--subtle" id="copy-button">
           Markdown kopieren
@@ -758,8 +814,8 @@ function renderCompletion() {
     render();
   });
 
-  document.querySelector("#save-button").addEventListener("click", () => {
-    saveCurrentReport(signature, exportMarkdown);
+  document.querySelector("#save-button").addEventListener("click", async () => {
+    await saveCurrentReport(signature, exportMarkdown);
     render();
   });
 
@@ -772,7 +828,7 @@ function renderCompletion() {
   });
 }
 
-function saveCurrentReport(signature, exportMarkdown) {
+async function saveCurrentReport(signature, exportMarkdown) {
   const exists = appState.savedEntries.some((entry) => entry.signature === signature);
 
   if (exists) {
@@ -782,17 +838,30 @@ function saveCurrentReport(signature, exportMarkdown) {
   }
 
   const summary = buildNormalizedSummary();
-  appState.savedEntries.unshift({
-    id: String(Date.now()),
+  const entryPayload = {
     signature,
     name: summary.berichtsname || "Unbenannter Bericht",
     fachabteilung: summary.fachabteilung || "-",
     timestamp: new Date().toLocaleString("de-DE"),
     exportMarkdown,
-  });
-  appState.lastSavedSignature = signature;
-  persistSavedEntries();
-  setStatus("Bericht gespeichert.");
+    summary,
+  };
+
+  try {
+    const savedEntry = await createSavedEntry(entryPayload);
+    appState.savedEntries.unshift(savedEntry);
+    appState.savedEntriesError = "";
+    appState.lastSavedSignature = signature;
+    setStatus("Bericht gespeichert.");
+  } catch (error) {
+    if (error.status === 409) {
+      appState.lastSavedSignature = signature;
+      setStatus("Dieser Bericht ist bereits gespeichert.", "error");
+      return;
+    }
+
+    setStatus("Bericht konnte nicht gespeichert werden.", "error");
+  }
 }
 
 function downloadMarkdown(markdown) {
@@ -878,6 +947,24 @@ function renderLiveSummary() {
 }
 
 function renderSavedEntries() {
+  if (!appState.savedEntriesLoaded) {
+    savedEntriesContainer.innerHTML = `
+      <div class="empty-state">
+        Gespeicherte Berichte werden geladen.
+      </div>
+    `;
+    return;
+  }
+
+  if (appState.savedEntriesError) {
+    savedEntriesContainer.innerHTML = `
+      <div class="empty-state">
+        ${escapeHtml(appState.savedEntriesError)}
+      </div>
+    `;
+    return;
+  }
+
   if (!appState.savedEntries.length) {
     savedEntriesContainer.innerHTML = `
       <div class="empty-state">
@@ -941,13 +1028,25 @@ function renderSavedEntries() {
   });
 
   savedEntriesContainer.querySelectorAll("[data-delete-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      appState.savedEntries = appState.savedEntries.filter((item) => item.id !== button.dataset.deleteId);
-      persistSavedEntries();
-      if (!appState.savedEntries.some((item) => item.signature === appState.lastSavedSignature)) {
-        appState.lastSavedSignature = "";
+    button.addEventListener("click", async () => {
+      const reportId = button.dataset.deleteId;
+      if (!reportId) {
+        return;
       }
-      renderSavedEntries();
+
+      try {
+        await removeSavedEntry(reportId);
+        appState.savedEntries = appState.savedEntries.filter((item) => item.id !== reportId);
+        if (!appState.savedEntries.some((item) => item.signature === appState.lastSavedSignature)) {
+          appState.lastSavedSignature = "";
+        }
+        renderSavedEntries();
+      } catch (error) {
+        button.textContent = "Fehler";
+        window.setTimeout(() => {
+          button.textContent = "Löschen";
+        }, 1400);
+      }
     });
   });
 }
