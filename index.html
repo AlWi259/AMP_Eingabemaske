@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Berichtskatalog</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="brandbar">
+        <div class="brandbar-inner">
+          <div class="brand-left">
+            <img
+              class="brand-logo brand-logo--light"
+              src="./assets/accantec_part_of_x1f.png"
+              alt="accantec"
+            />
+            <img
+              class="brand-logo brand-logo--dark"
+              src="./assets/accantec_logo_x1f_white.png"
+              alt="accantec"
+            />
+            <h1>Berichtskatalog</h1>
+          </div>
+
+          <div class="brand-right">
+            <button
+              type="button"
+              class="theme-toggle"
+              id="theme-toggle"
+              aria-label="Darstellung umschalten"
+            >
+              Dark Mode
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="page-content">
+        <section class="assistant-card">
+          <div id="assistant-content"></div>
+        </section>
+
+        <section class="summary-card">
+          <h2>Live-Zusammenfassung</h2>
+          <div id="live-summary" class="summary-list"></div>
+        </section>
+
+        <section class="summary-card">
+          <h2>Gespeicherte Einträge</h2>
+          <div id="saved-entries" class="saved-entries"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
