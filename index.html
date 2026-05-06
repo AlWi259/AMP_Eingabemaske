@@ -6,12 +6,41 @@
     <meta name="color-scheme" content="light dark" />
     <title>Berichtskatalog</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("berichtskatalog-theme");
+          if (stored === "dark" || stored === "light") {
+            document.documentElement.dataset.theme = stored;
+          } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            document.documentElement.dataset.theme = "dark";
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div class="page-shell">
       <header class="brandbar">
         <div class="brandbar-inner">
           <div class="brand-left">
+            <h1>Berichtskatalog</h1>
+          </div>
+
+          <div class="brand-right">
+            <button
+              type="button"
+              class="theme-toggle"
+              id="theme-toggle"
+              role="switch"
+              aria-checked="false"
+              aria-label="Darstellung umschalten"
+              title="Light/Dark Mode umschalten"
+            >
+              <span class="theme-toggle__track" aria-hidden="true">
+                <span class="theme-toggle__thumb"></span>
+              </span>
+            </button>
             <img
               class="brand-logo brand-logo--light"
               src="./assets/accantec_part_of_x1f.png"
@@ -22,18 +51,6 @@
               src="./assets/accantec_logo_x1f_white.png"
               alt="accantec"
             />
-            <h1>Berichtskatalog</h1>
-          </div>
-
-          <div class="brand-right">
-            <button
-              type="button"
-              class="theme-toggle"
-              id="theme-toggle"
-              aria-label="Darstellung umschalten"
-            >
-              Dark Mode
-            </button>
           </div>
         </div>
       </header>
