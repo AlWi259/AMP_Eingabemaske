@@ -525,6 +525,10 @@ function renderChat() {
         }
       </div>
       <form class="chat-input-row" id="chat-form" ${appState.chatLoading ? "inert" : ""}>
+        ${appState.chatMessages.length === 0 ? `<button type="button" class="call-button" id="call-button" aria-label="Sprachgespräch starten" title="Bericht per Sprache erfassen">
+          <svg width="14" height="14" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M7.5 1a2.5 2.5 0 00-2.5 2.5v4a2.5 2.5 0 005 0v-4A2.5 2.5 0 007.5 1zM5 7.5a2.5 2.5 0 005 0M3 6v1.5a4.5 4.5 0 009 0V6M7.5 12v2M5.5 14h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          Anrufen
+        </button>` : ""}
         <textarea
           id="chat-input"
           placeholder="Antwort eingeben …"
@@ -582,6 +586,9 @@ function renderChat() {
     if (recognizing) micBtn.classList.add("chat-mic-btn--active");
     attachMicEvents(micBtn, input, form);
   }
+
+  const callBtn = document.querySelector("#call-button");
+  if (callBtn) callBtn.addEventListener("click", startVoiceCall);
 }
 
 // ---------------------------------------------------------------------------
@@ -1134,7 +1141,6 @@ const voiceOverlay  = document.querySelector("#voice-overlay");
 const voiceOrb      = document.querySelector("#voice-orb");
 const voiceStatus   = document.querySelector("#voice-status");
 const voiceEndBtn   = document.querySelector("#voice-end-btn");
-const callButton    = document.querySelector("#call-button");
 
 const voice = {
   pc: null,
@@ -1176,10 +1182,9 @@ function drawOrbFrame(canvas, scale) {
 
   ctx.clearRect(0, 0, W, H);
 
-  // Central ambient glow
-  const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.5);
-  grd.addColorStop(0,   "rgba(252,106,28,0.08)");
-  grd.addColorStop(0.5, "rgba(252,106,28,0.03)");
+  // Subtle central glow (kept minimal to avoid shimmer halo)
+  const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.2);
+  grd.addColorStop(0,   "rgba(252,106,28,0.04)");
   grd.addColorStop(1,   "rgba(252,106,28,0)");
   ctx.fillStyle = grd;
   ctx.fillRect(0, 0, W, H);
@@ -1201,13 +1206,13 @@ function drawOrbFrame(canvas, scale) {
     };
   }).sort((a, b) => a.depth - b.depth);
 
-  // Soft glow pass (blurred larger circles)
+  // Tight glow pass (reduced radius + alpha to eliminate outer shimmer)
   ctx.save();
-  ctx.filter = "blur(3px)";
+  ctx.filter = "blur(2px)";
   for (const p of pts) {
     ctx.beginPath();
-    ctx.arc(p.sx, p.sy, p.size * 2.4, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(252,106,28,${(p.alpha * 0.32).toFixed(3)})`;
+    ctx.arc(p.sx, p.sy, p.size * 1.6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(252,106,28,${(p.alpha * 0.18).toFixed(3)})`;
     ctx.fill();
   }
   ctx.restore();
@@ -1221,29 +1226,29 @@ function drawOrbFrame(canvas, scale) {
   }
 }
 
-callButton.addEventListener("click", startVoiceCall);
 voiceEndBtn.addEventListener("click", () => endVoiceCall(false));
 
 async function startVoiceCall() {
   voiceOverlay.hidden = false;
-  callButton.disabled = true;
+  const callBtn = document.querySelector("#call-button");
+  if (callBtn) callBtn.disabled = true;
   setVoiceStatus("Verbinde…");
 
   try {
-    // 1. Get ephemeral token from our server
-    const res = await fetch(`${API_BASE_URL}/realtime-session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ collectedFields: appState.collectedFields }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Session-Fehler");
-    }
-    const { token } = await res.json();
-
-    // 2. Microphone
-    voice.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // 1+2. Fetch token and request microphone in parallel
+    const [tokenData, micStream] = await Promise.all([
+      fetch(`${API_BASE_URL}/realtime-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collectedFields: appState.collectedFields }),
+      }).then(async (r) => {
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Session-Fehler"); }
+        return r.json();
+      }),
+      navigator.mediaDevices.getUserMedia({ audio: true }),
+    ]);
+    const { token } = tokenData;
+    voice.micStream = micStream;
 
     // 3. WebRTC peer connection
     voice.pc = new RTCPeerConnection();
@@ -1363,7 +1368,8 @@ function applyVoiceFieldsToForm(collected) {
 function endVoiceCall(completed) {
   // Close overlay first — always, regardless of cleanup errors below
   voiceOverlay.hidden = true;
-  callButton.disabled = false;
+  const callBtn = document.querySelector("#call-button");
+  if (callBtn) callBtn.disabled = false;
 
   try {
     if (voice.animFrame) { cancelAnimationFrame(voice.animFrame); voice.animFrame = null; }
