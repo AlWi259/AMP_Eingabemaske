@@ -560,7 +560,7 @@ function buildFieldMarkup(field) {
   if (field.type === "textarea") {
     return `
       <div class="field-control">
-        <textarea id="field-input" placeholder="${escapeAttribute(field.placeholder ?? "")}">${escapeHtml(displayValue)}</textarea>
+        <textarea id="field-input" rows="1" placeholder="${escapeAttribute(field.placeholder ?? "")}">${escapeHtml(displayValue)}</textarea>
       </div>
     `;
   }

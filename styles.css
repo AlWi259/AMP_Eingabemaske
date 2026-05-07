@@ -314,7 +314,6 @@ html[data-theme="dark"] textarea {
 }
 
 textarea {
-  min-height: 54px;
   max-height: 142px;
   resize: none;
   overflow-y: auto;
