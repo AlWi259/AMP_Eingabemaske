@@ -1147,7 +1147,79 @@ const voice = {
   collected: {},
   orbTarget: 1,
   orbCurrent: 1,
+  connected: false,
 };
+
+// Particle swarm orb
+const ORB_PARTICLES = [];
+
+function initOrbParticles() {
+  ORB_PARTICLES.length = 0;
+  for (let i = 0; i < 200; i++) {
+    ORB_PARTICLES.push({
+      theta:  Math.random() * Math.PI * 2,
+      phi:    Math.acos(2 * Math.random() - 1),
+      r:      0.5 + Math.random() * 0.5,
+      dTheta: (Math.random() - 0.5) * 0.016,
+      dPhi:   (Math.random() - 0.5) * 0.010,
+      size:   0.8 + Math.random() * 2.4,
+      alpha:  0.25 + Math.random() * 0.75,
+    });
+  }
+}
+
+function drawOrbFrame(canvas, scale) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const R  = Math.min(W, H) * 0.36 * scale;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Central ambient glow
+  const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.5);
+  grd.addColorStop(0,   "rgba(252,106,28,0.08)");
+  grd.addColorStop(0.5, "rgba(252,106,28,0.03)");
+  grd.addColorStop(1,   "rgba(252,106,28,0)");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  // Project particles and sort back-to-front for depth
+  const pts = ORB_PARTICLES.map(p => {
+    const sp    = Math.sin(p.phi);
+    const x     = p.r * sp * Math.cos(p.theta);
+    const y     = p.r * sp * Math.sin(p.theta);
+    const z     = p.r * Math.cos(p.phi);
+    const depth  = (z + 1) / 2;
+    const pScale = 0.6 + depth * 0.4;
+    return {
+      sx:    cx + x * R * pScale,
+      sy:    cy + y * R * pScale,
+      depth,
+      size:  p.size * pScale,
+      alpha: p.alpha * (0.08 + depth * 0.92),
+    };
+  }).sort((a, b) => a.depth - b.depth);
+
+  // Soft glow pass (blurred larger circles)
+  ctx.save();
+  ctx.filter = "blur(3px)";
+  for (const p of pts) {
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, p.size * 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(252,106,28,${(p.alpha * 0.32).toFixed(3)})`;
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Sharp bright cores
+  for (const p of pts) {
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, Math.max(0.4, p.size * 0.52), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,190,115,${(p.alpha * 0.92).toFixed(3)})`;
+    ctx.fill();
+  }
+}
 
 callButton.addEventListener("click", startVoiceCall);
 voiceEndBtn.addEventListener("click", () => endVoiceCall(false));
@@ -1188,7 +1260,7 @@ async function startVoiceCall() {
     // 5. Data channel for events
     voice.dc = voice.pc.createDataChannel("oai-events");
     voice.dc.onopen  = () => setVoiceStatus("Zuhören…");
-    voice.dc.onclose = () => endVoiceCall(false);
+    voice.dc.onclose = () => { if (voice.connected) endVoiceCall(false); };
     voice.dc.onmessage = handleRealtimeEvent;
 
     // 6. SDP offer → OpenAI
@@ -1209,6 +1281,7 @@ async function startVoiceCall() {
     if (!sdpRes.ok) throw new Error("WebRTC-Verbindung fehlgeschlagen");
 
     await voice.pc.setRemoteDescription({ type: "answer", sdp: await sdpRes.text() });
+    voice.connected = true;
     animateOrb();
 
   } catch (err) {
@@ -1303,7 +1376,9 @@ function endVoiceCall(completed) {
     voice.collected  = {};
     voice.orbTarget  = 1;
     voice.orbCurrent = 1;
-    voiceOrb.style.setProperty("--orb-scale", "1");
+    voice.connected  = false;
+    ORB_PARTICLES.length = 0;
+    voiceOrb.getContext("2d")?.clearRect(0, 0, voiceOrb.width, voiceOrb.height);
   } catch {}
 
   if (completed) {
@@ -1325,22 +1400,31 @@ function setupOrbAnalyser(stream) {
 }
 
 function animateOrb() {
-  const data = voice.analyser ? new Uint8Array(voice.analyser.frequencyBinCount) : null;
+  if (!ORB_PARTICLES.length) initOrbParticles();
 
   function tick() {
     voice.animFrame = requestAnimationFrame(tick);
 
-    if (data && voice.analyser) {
+    if (voice.analyser) {
+      const data = new Uint8Array(voice.analyser.frequencyBinCount);
       voice.analyser.getByteFrequencyData(data);
       const avg = data.reduce((s, v) => s + v, 0) / data.length;
-      const audioScale = 1 + (avg / 255) * 0.45;
-      voice.orbTarget = Math.max(voice.orbTarget, audioScale);
+      voice.orbTarget = Math.max(voice.orbTarget, 1 + (avg / 255) * 0.45);
     }
-
     voice.orbCurrent += (voice.orbTarget - voice.orbCurrent) * 0.12;
     voice.orbTarget  += (1.0 - voice.orbTarget) * 0.04;
 
-    voiceOrb.style.setProperty("--orb-scale", voice.orbCurrent.toFixed(3));
+    const speed = 0.5 + voice.orbCurrent * 0.7;
+    for (const p of ORB_PARTICLES) {
+      p.theta += p.dTheta * speed;
+      p.phi   += p.dPhi   * speed;
+      p.dTheta += (Math.random() - 0.5) * 0.0004;
+      p.dPhi   += (Math.random() - 0.5) * 0.0003;
+      p.dTheta  = Math.max(-0.024, Math.min(0.024, p.dTheta));
+      p.dPhi    = Math.max(-0.014, Math.min(0.014, p.dPhi));
+    }
+
+    drawOrbFrame(voiceOrb, voice.orbCurrent);
   }
 
   tick();
