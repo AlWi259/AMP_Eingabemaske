@@ -369,6 +369,11 @@ def run_chat_stream(payload: dict):
         if complete:
             break
 
+        # Ensure a space between streamed text from different iterations
+        if accumulated_text and not accumulated_text[-1].isspace():
+            yield {"type": "delta", "text": " "}
+            accumulated_text += " "
+
     result: dict[str, Any] = {
         "type": "done",
         "collectedFields": collected,
