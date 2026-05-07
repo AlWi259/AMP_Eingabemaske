@@ -2,6 +2,14 @@ const THEME_KEY = "berichtskatalog-theme";
 const API_BASE_URL =
   window.location.protocol === "file:" ? "http://127.0.0.1:8000/api" : `${window.location.origin}/api`;
 
+const CHAT_GREETING =
+  "Hallo! Ich helfe Ihnen dabei, einen neuen Berichtskatalog-Eintrag zu erfassen. " +
+  "Wie heißt der Bericht, und worum geht es dabei in Kürze?";
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let recognizing = false;
+
 const fieldDefinitions = [
   {
     key: "berichtId",
@@ -336,12 +344,13 @@ const fieldDefinitions = [
 ];
 
 const assistantContent = document.querySelector("#assistant-content");
-const liveSummary = document.querySelector("#live-summary");
 const savedEntriesContainer = document.querySelector("#saved-entries");
 const themeToggle = document.querySelector("#theme-toggle");
+const appNav = document.querySelector("#app-nav");
+const tabChat = document.querySelector("#tab-chat");
+const tabEntries = document.querySelector("#tab-entries");
 
 const appState = {
-  currentIndex: 0,
   values: buildInitialValues(),
   otherDetails: {},
   savedEntries: [],
@@ -350,10 +359,24 @@ const appState = {
   theme: loadTheme(),
   status: { message: "", variant: "success" },
   lastSavedSignature: "",
+  mode: "chat",
+  chatMessages: [],
+  chatLoading: false,
+  collectedFields: {},
 };
 
 applyTheme(appState.theme);
 themeToggle.addEventListener("click", toggleTheme);
+appNav.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-tab]");
+  if (!btn) return;
+  const tab = btn.dataset.tab;
+  appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
+  btn.classList.add("app-nav__tab--active");
+  tabChat.hidden = tab !== "chat";
+  tabEntries.hidden = tab !== "entries";
+  if (tab === "entries") renderSavedEntries();
+});
 render();
 void initializeSavedEntries();
 
@@ -434,7 +457,6 @@ function loadTheme() {
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  // Keep the switch state in sync with the active theme.
   themeToggle.setAttribute("aria-checked", String(theme === "dark"));
 }
 
@@ -443,7 +465,7 @@ function toggleTheme() {
   try {
     window.localStorage.setItem(THEME_KEY, appState.theme);
   } catch (error) {
-    // The theme still changes even if the browser blocks storage.
+    // theme still changes even if storage is blocked
   }
   applyTheme(appState.theme);
 }
@@ -453,309 +475,242 @@ function getVisibleFields() {
     if (!field.dependsOn) {
       return true;
     }
-
     return field.dependsOn.values.includes(appState.values[field.dependsOn.key]);
   });
 }
 
-function getCurrentField() {
-  return getVisibleFields()[appState.currentIndex] ?? null;
-}
-
 function render() {
-  renderAssistantContent();
-  renderLiveSummary();
+  if (appState.mode === "complete") {
+    renderCompletion();
+  } else {
+    renderChat();
+  }
   renderSavedEntries();
 }
 
-function renderAssistantContent() {
-  const currentField = getCurrentField();
+// ---------------------------------------------------------------------------
+// Chat mode
+// ---------------------------------------------------------------------------
 
-  if (!currentField) {
-    renderCompletion();
-    return;
-  }
+function renderChatMarkdown(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  return html;
+}
 
-  const visibleFields = getVisibleFields();
-  const progress = Math.round((appState.currentIndex / visibleFields.length) * 100);
+function renderChat() {
+  const hasMic = Boolean(SpeechRecognition);
 
   assistantContent.innerHTML = `
-    <div class="assistant-card__header">
-      <h2>${escapeHtml(currentField.label)}</h2>
-      <div class="progress-box">
-        <div class="progress-box__label">
-          <span>Schritt ${appState.currentIndex + 1} von ${visibleFields.length}</span>
-          <span>${progress}%</span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-bar__fill" style="width: ${progress}%"></div>
-        </div>
+    <div class="chat-container">
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-bubble chat-bubble--assistant">${renderChatMarkdown(CHAT_GREETING)}</div>
+        ${appState.chatMessages
+          .map((m) => {
+            const content = m.role === "assistant" ? renderChatMarkdown(m.content) : escapeHtml(m.content);
+            return `<div class="chat-bubble chat-bubble--${escapeAttribute(m.role)}">${content}</div>`;
+          })
+          .join("")}
+        ${
+          appState.chatLoading
+            ? `<div class="chat-typing">
+                <span class="chat-typing__dot"></span>
+                <span class="chat-typing__dot"></span>
+                <span class="chat-typing__dot"></span>
+               </div>`
+            : ""
+        }
       </div>
-    </div>
-
-    <div class="category-line">${escapeHtml(currentField.category)}</div>
-
-    <form id="assistant-form" novalidate>
-      <div class="question-card">
-        <div class="question-card__meta">
-          <span class="question-card__index">${String(appState.currentIndex + 1).padStart(2, "0")}</span>
-          <span class="question-card__required ${currentField.required ? "" : "question-card__required--hidden"}">Pflichtfeld</span>
-        </div>
-
-        <label class="question-card__label" for="field-input">
-          ${escapeHtml(currentField.label)}
-        </label>
-
-        ${buildFieldMarkup(currentField)}
-
-        <div class="question-card__notice" id="field-notice"></div>
-      </div>
-
-      <div class="actions">
-        <button type="button" class="button button--ghost" id="back-button" ${appState.currentIndex === 0 ? "disabled" : ""}>
-          <span class="button__icon" aria-hidden="true">&larr;</span>
-          <span class="button__label">Zurück</span>
+      <form class="chat-input-row" id="chat-form" ${appState.chatLoading ? "inert" : ""}>
+        <textarea
+          id="chat-input"
+          placeholder="Antwort eingeben …"
+          rows="1"
+          ${appState.chatLoading ? "disabled" : ""}
+        ></textarea>
+        ${
+          hasMic
+            ? `<button type="button" class="chat-mic-btn" id="mic-button" aria-label="Spracheingabe" title="Spracheingabe">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <rect x="5.5" y="0.5" width="5" height="9" rx="2.5" stroke="currentColor" stroke-width="1" fill="none"/>
+                  <path d="M2.5 8a5.5 5.5 0 0010 0" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                  <line x1="8" y1="13.5" x2="8" y2="15.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+               </button>`
+            : ""
+        }
+        <button type="submit" class="chat-send-btn" aria-label="Senden">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M15.5 9L3 15.5V11L11 9L3 7V2.5L15.5 9Z"/>
+          </svg>
         </button>
-        <div class="actions__group">
-          ${currentField.required ? "" : '<button type="button" class="button button--subtle" id="skip-button"><span class="button__icon" aria-hidden="true">&raquo;</span><span class="button__label">Überspringen</span></button>'}
-          <button type="submit" class="button button--primary">
-            ${appState.currentIndex === visibleFields.length - 1 ? "Zur Zusammenfassung" : "Weiter"}
-          </button>
-        </div>
-      </div>
-    </form>
-  `;
-
-  const form = document.querySelector("#assistant-form");
-  const backButton = document.querySelector("#back-button");
-  const skipButton = document.querySelector("#skip-button");
-  const fieldInput = document.querySelector("#field-input");
-
-  form.addEventListener("submit", handleSubmit);
-  backButton.addEventListener("click", handleBack);
-
-  if (skipButton) {
-    skipButton.addEventListener("click", handleSkip);
-  }
-
-  if (currentField.type === "select" && fieldInput) {
-    fieldInput.addEventListener("change", handleSelectChange);
-  }
-
-  const textarea = assistantContent.querySelector("textarea");
-  if (textarea) {
-    autoResizeTextarea(textarea);
-    textarea.addEventListener("input", () => autoResizeTextarea(textarea));
-  }
-
-  if (fieldInput) {
-    fieldInput.focus();
-  }
-}
-
-function buildFieldMarkup(field) {
-  const value = appState.values[field.key] ?? "";
-  const displayValue = value === field.defaultValue ? "" : value;
-
-  if (field.type === "textarea") {
-    return `
-      <div class="field-control">
-        <textarea id="field-input" rows="1" placeholder="${escapeAttribute(field.placeholder ?? "")}">${escapeHtml(displayValue)}</textarea>
-      </div>
-    `;
-  }
-
-  if (field.type === "select") {
-    const options = field.options
-      .map((option) => {
-        const selected = option === value ? "selected" : "";
-        return `<option value="${escapeAttribute(option)}" ${selected}>${escapeHtml(option)}</option>`;
-      })
-      .join("");
-
-    const showOther = value === "Sonstiges";
-    const otherValue = appState.otherDetails[field.key] ?? "";
-
-    return `
-      <div class="field-grid">
-        <div class="field-control select-wrap">
-          <select id="field-input">
-            <option value="">Bitte auswählen</option>
-            ${options}
-          </select>
-        </div>
-        <div class="field-control" id="other-field" ${showOther ? "" : "hidden"}>
-          <input
-            type="text"
-            id="other-input"
-            value="${escapeAttribute(otherValue)}"
-            placeholder="Sonstiges"
-          />
-        </div>
-      </div>
-    `;
-  }
-
-  if (field.type === "number") {
-    return `
-      <div class="field-control">
-        <input
-          type="number"
-          id="field-input"
-          min="0"
-          step="0.5"
-          value="${escapeAttribute(displayValue === "-" ? "" : displayValue)}"
-          placeholder="${escapeAttribute(field.placeholder ?? "")}"
-        />
-      </div>
-    `;
-  }
-
-  return `
-    <div class="field-control">
-      <input
-        type="text"
-        id="field-input"
-        value="${escapeAttribute(displayValue)}"
-        placeholder="${escapeAttribute(field.placeholder ?? "")}"
-      />
+      </form>
     </div>
   `;
+
+  const messagesEl = document.querySelector("#chat-messages");
+  if (messagesEl) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  const form = document.querySelector("#chat-form");
+  const input = document.querySelector("#chat-input");
+  const micBtn = document.querySelector("#mic-button");
+
+  if (form) {
+    form.addEventListener("submit", handleChatSubmit);
+  }
+
+  if (input) {
+    autoResizeTextarea(input);
+    input.addEventListener("input", () => autoResizeTextarea(input));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form?.requestSubmit();
+      }
+    });
+    if (!appState.chatLoading) {
+      input.focus();
+    }
+  }
+
+  if (micBtn && hasMic) {
+    if (recognizing) micBtn.classList.add("chat-mic-btn--active");
+    attachMicEvents(micBtn, input, form);
+  }
 }
 
-function handleSelectChange(event) {
-  const currentField = getCurrentField();
-  if (!currentField) {
-    return;
-  }
+// ---------------------------------------------------------------------------
+// Microphone – tap to toggle, hold to push-to-talk; both auto-send on result
+// ---------------------------------------------------------------------------
 
-  const isOther = event.target.value === "Sonstiges";
-  const otherField = document.querySelector("#other-field");
+let micHoldTimer = null;
+let micHoldMode = false;
+let micTapMode = false;
 
-  if (otherField) {
-    otherField.hidden = !isOther;
-  }
+function attachMicEvents(btn, inputEl, formEl) {
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    btn.setPointerCapture(e.pointerId);
 
-  if (!isOther) {
-    delete appState.otherDetails[currentField.key];
-  }
+    if (micTapMode && recognizing) {
+      // Second tap → stop, result will auto-send
+      recognition.stop();
+      return;
+    }
+
+    if (!recognizing) {
+      micHoldMode = false;
+      micTapMode = false;
+      startMicRecognition(inputEl, formEl);
+      micHoldTimer = window.setTimeout(() => { micHoldMode = true; }, 350);
+    }
+  });
+
+  btn.addEventListener("pointerup", () => {
+    window.clearTimeout(micHoldTimer);
+    if (micHoldMode && recognizing) {
+      // Hold release → stop, result will auto-send
+      micHoldMode = false;
+      recognition.stop();
+    } else if (!micHoldMode && recognizing) {
+      // Quick tap → stay recording (tap mode)
+      micTapMode = true;
+    }
+  });
+
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
-function handleSubmit(event) {
+function startMicRecognition(inputEl, formEl) {
+  recognition = new SpeechRecognition();
+  recognition.lang = "de-DE";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    recognizing = true;
+    document.querySelector("#mic-button")?.classList.add("chat-mic-btn--active");
+  };
+
+  recognition.onend = () => {
+    recognizing = false;
+    micTapMode = false;
+    micHoldMode = false;
+    document.querySelector("#mic-button")?.classList.remove("chat-mic-btn--active");
+  };
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    const input = document.querySelector("#chat-input");
+    if (input) {
+      input.value = (input.value ? input.value + " " : "") + transcript;
+      autoResizeTextarea(input);
+    }
+    window.setTimeout(() => formEl?.requestSubmit(), 60);
+  };
+
+  recognition.onerror = () => {
+    recognizing = false;
+    micTapMode = false;
+    micHoldMode = false;
+    document.querySelector("#mic-button")?.classList.remove("chat-mic-btn--active");
+  };
+
+  recognition.start();
+}
+
+async function handleChatSubmit(event) {
   event.preventDefault();
 
-  const currentField = getCurrentField();
-  if (!currentField) {
+  const input = document.querySelector("#chat-input");
+  const text = input ? input.value.trim() : "";
+
+  if (!text || appState.chatLoading) {
     return;
   }
 
-  const payload = readFieldValue();
-  const validation = validateField(currentField, payload.value, payload.otherValue);
-  const notice = document.querySelector("#field-notice");
-
-  if (!validation.valid) {
-    notice.textContent = validation.message;
-    return;
-  }
-
-  notice.textContent = "";
-  appState.values[currentField.key] = validation.value;
-
-  if (validation.otherValue) {
-    appState.otherDetails[currentField.key] = validation.otherValue;
-  } else {
-    delete appState.otherDetails[currentField.key];
-  }
-
-  if (currentField.key === "manuellerAufwand" && validation.value === "Kein Aufwand") {
-    appState.values.aufwandKonkret = "-";
-  }
-
-  clearSaveFeedback();
-
-  const visibleFields = getVisibleFields();
-  appState.currentIndex =
-    appState.currentIndex >= visibleFields.length - 1
-      ? visibleFields.length
-      : appState.currentIndex + 1;
-
+  appState.chatMessages.push({ role: "user", content: text });
+  appState.chatLoading = true;
   render();
-}
 
-function handleBack() {
-  if (appState.currentIndex === 0) {
-    return;
-  }
+  try {
+    const data = await requestJson(`${API_BASE_URL}/chat`, {
+      method: "POST",
+      body: JSON.stringify({
+        messages: appState.chatMessages,
+        collectedFields: appState.collectedFields,
+      }),
+    });
 
-  clearSaveFeedback();
-  appState.currentIndex -= 1;
-  render();
-}
-
-function handleSkip() {
-  const currentField = getCurrentField();
-  if (!currentField || currentField.required) {
-    return;
-  }
-
-  appState.values[currentField.key] = currentField.defaultValue ?? "-";
-  delete appState.otherDetails[currentField.key];
-  clearSaveFeedback();
-  appState.currentIndex += 1;
-  render();
-}
-
-function readFieldValue() {
-  const mainInput = document.querySelector("#field-input");
-  const otherInput = document.querySelector("#other-input");
-
-  return {
-    value: mainInput ? mainInput.value.trim() : "",
-    otherValue: otherInput ? otherInput.value.trim() : "",
-  };
-}
-
-function validateField(field, rawValue, otherValue) {
-  if (!rawValue) {
-    if (field.required) {
-      return { valid: false, message: "Bitte dieses Feld ausfüllen." };
+    if (data.collectedFields && typeof data.collectedFields === "object") {
+      appState.collectedFields = data.collectedFields;
+      appState.values = { ...buildInitialValues(), ...data.collectedFields };
     }
 
-    return { valid: true, value: field.defaultValue ?? "-", otherValue: "" };
-  }
-
-  if (field.type === "number") {
-    const parsed = Number(rawValue);
-    if (Number.isNaN(parsed) || parsed < 0) {
-      return {
-        valid: false,
-        message: "Bitte einen sinnvollen Aufwand in Personentagen angeben.",
-      };
+    if (data.reply) {
+      appState.chatMessages.push({ role: "assistant", content: data.reply });
     }
 
-    return { valid: true, value: String(parsed), otherValue: "" };
+    if (data.complete) {
+      appState.mode = "complete";
+    }
+  } catch (error) {
+    const msg =
+      error.status === 503
+        ? "ANTHROPIC_API_KEY fehlt oder ist ungültig. Bitte in der .env-Datei setzen und Server neu starten."
+        : "Entschuldigung, es ist ein Fehler aufgetreten. Bitte erneut versuchen.";
+    appState.chatMessages.push({ role: "assistant", content: msg });
   }
 
-  if (field.type === "monthText" && !/^(0[1-9]|1[0-2])\.\d{4}$/.test(rawValue)) {
-    return {
-      valid: false,
-      message: "Bitte im Format MM.JJJJ eingeben, zum Beispiel 03.2025.",
-    };
-  }
-
-  if (field.type === "select" && rawValue === "Sonstiges" && !otherValue) {
-    return {
-      valid: false,
-      message: "Bitte den Sonstiges-Wert ergänzen.",
-    };
-  }
-
-  return {
-    valid: true,
-    value: rawValue,
-    otherValue: rawValue === "Sonstiges" ? otherValue : "",
-  };
+  appState.chatLoading = false;
+  render();
 }
+
+// ---------------------------------------------------------------------------
+// Completion screen
+// ---------------------------------------------------------------------------
 
 function renderCompletion() {
   const exportMarkdown = buildExportMarkdown();
@@ -812,7 +767,7 @@ function renderCompletion() {
 
   document.querySelector("#summary-back-button").addEventListener("click", () => {
     clearSaveFeedback();
-    appState.currentIndex = Math.max(getVisibleFields().length - 1, 0);
+    appState.mode = "chat";
     render();
   });
 
@@ -832,7 +787,10 @@ function renderCompletion() {
   });
 
   document.querySelector("#restart-button").addEventListener("click", () => {
-    appState.currentIndex = 0;
+    appState.mode = "chat";
+    appState.chatMessages = [];
+    appState.chatLoading = false;
+    appState.collectedFields = {};
     appState.values = buildInitialValues();
     appState.otherDetails = {};
     clearSaveFeedback();
@@ -1024,9 +982,15 @@ function renderSavedEntries() {
         return;
       }
       appState.values = { ...buildInitialValues(), ...entry.summary };
+      appState.collectedFields = entry.summary || {};
       appState.otherDetails = {};
-      appState.currentIndex = 0;
+      appState.mode = "complete";
       clearSaveFeedback();
+      // Switch to Erfassung tab
+      appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
+      appNav.querySelector("[data-tab='chat']").classList.add("app-nav__tab--active");
+      tabChat.hidden = false;
+      tabEntries.hidden = true;
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
@@ -1056,6 +1020,9 @@ function renderSavedEntries() {
     button.addEventListener("click", async () => {
       const reportId = button.dataset.deleteId;
       if (!reportId) {
+        return;
+      }
+      if (!window.confirm("Bericht wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.")) {
         return;
       }
       try {

@@ -24,6 +24,246 @@ DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+
+# ---------------------------------------------------------------------------
+# Chat / LLM helpers
+# ---------------------------------------------------------------------------
+
+_FIELD_META = [
+    {"key": "berichtId",              "label": "Bericht-ID",               "required": False, "default": "-"},
+    {"key": "berichtsname",           "label": "Berichtsname",              "required": True,  "default": ""},
+    {"key": "beschreibung",           "label": "Beschreibung",              "required": True,  "default": ""},
+    {"key": "workspace",              "label": "Workspace / Ablageort",     "required": False, "default": "-"},
+    {"key": "berichtstyp",            "label": "Berichtstyp",               "required": True,  "default": ""},
+    {"key": "besitzer",               "label": "Besitzer",                  "required": True,  "default": ""},
+    {"key": "fachabteilung",          "label": "Fachabteilung",             "required": True,  "default": ""},
+    {"key": "itAnsprechpartner",      "label": "IT-Ansprechpartner",        "required": False, "default": "-"},
+    {"key": "primaereDatenquelle",    "label": "Primäre Datenquelle",       "required": True,  "default": ""},
+    {"key": "weitereDatenquellen",    "label": "Weitere Datenquellen",      "required": False, "default": "-"},
+    {"key": "aktuellesTool",          "label": "Aktuelles Tool",            "required": True,  "default": ""},
+    {"key": "ausgabeformat",          "label": "Ausgabeformat",             "required": True,  "default": ""},
+    {"key": "zielgruppe",             "label": "Zielgruppe",                "required": True,  "default": ""},
+    {"key": "parameterFilter",        "label": "Parameter / Filter",        "required": False, "default": "Keine"},
+    {"key": "gatewayVerbindungen",    "label": "Gateway-Verbindungen",      "required": True,  "default": ""},
+    {"key": "automatisierungsgrad",   "label": "Automatisierungsgrad",      "required": True,  "default": ""},
+    {"key": "manuellerAufwand",       "label": "Manueller Aufwand",         "required": True,  "default": ""},
+    {"key": "aufwandKonkret",         "label": "Aufwand konkret",           "required": False, "default": "-"},
+    {"key": "aktualisierungsfrequenz","label": "Aktualisierungsfrequenz",   "required": True,  "default": ""},
+    {"key": "datenaktualitaet",       "label": "Datenaktualität",           "required": True,  "default": ""},
+    {"key": "approvalNachAenderung",  "label": "Approval nach Änderung",    "required": True,  "default": ""},
+    {"key": "letztesReview",          "label": "Letztes Review",            "required": False, "default": "Unbekannt"},
+    {"key": "komplexitaet",           "label": "Komplexität",               "required": True,  "default": ""},
+    {"key": "migrationsstatus",       "label": "Migrationsstatus",          "required": True,  "default": ""},
+    {"key": "prioritaet",             "label": "Priorität",                 "required": True,  "default": ""},
+    {"key": "aufwandPt",              "label": "Aufwand (PT)",              "required": False, "default": "-"},
+    {"key": "bemerkungen",            "label": "Bemerkungen",               "required": False, "default": "-"},
+]
+
+_REQUIRED_KEYS = [f["key"] for f in _FIELD_META if f["required"]]
+
+_SYSTEM_TEMPLATE = """\
+Du bist ein freundlicher, professioneller Assistent, der hilft, einen Berichtskatalog-Eintrag für ein BI-Reporting-System zu erfassen.
+
+Du führst ein strukturiertes Gespräch auf Deutsch und sammelst die folgenden Informationen. Stelle pro Nachricht maximal 2 thematisch verwandte Fragen. Sei präzise und direkt.
+
+FELDER (Pflichtfelder mit *):
+
+Identifikation:
+  * berichtsname – Berichtsname (Freitext)
+  * beschreibung – Kurze Beschreibung des Berichts (Freitext)
+  * berichtstyp – Exakt eine Option: Operativer Bericht | Managementbericht | Finanzbericht | Dashboard | Ad-hoc-Analyse | KPI-Übersicht | Regulatorischer Bericht | Forecast / Prognose | Sonstiges
+    berichtId – optional, z. B. REP-2048
+    workspace – optional, Ablageort
+
+Verantwortung:
+  * besitzer – Name des Berichtsbesitzers
+  * fachabteilung – Exakt eine Option: Controlling | Finanzen | Vertrieb | Marketing | Einkauf | Logistik | Produktion | Personal / HR | IT | Geschäftsführung | Qualitätssicherung | Rechtswesen | Sonstiges
+    itAnsprechpartner – optional
+
+Technologie & Daten:
+  * primaereDatenquelle – Exakt eine Option: SQL Server | Power BI Dataflow | Oracle | SAP HANA | MySQL | PostgreSQL | Azure SQL | Snowflake | BigQuery | Excel / CSV | SharePoint-Liste | REST API | OData | SAP BW | Sonstiges
+  * aktuellesTool – Exakt eine Option: Excel | Power BI | SSRS | Tableau | Qlik | IBM Cognos | Sonstiges
+  * ausgabeformat – Exakt eine Option: Excel (.xlsx) | Power BI Report | Power BI App | PDF | PowerPoint | Web-Browser / URL | E-Mail | SharePoint-Seite | Confluence | Microsoft Teams | CSV / Text | Sonstiges
+  * zielgruppe – Exakt eine Option: Management | Fachabteilung | Analysten | Externe Stakeholder
+  * gatewayVerbindungen – Exakt eine Option: Ja | Nein | Unbekannt
+    weitereDatenquellen – optional (Freitext)
+    parameterFilter – optional, z. B. Zeitraum, Region
+
+Qualität & Betrieb:
+  * automatisierungsgrad – Exakt eine Option: Vollautomatisiert | Teilautomatisiert | Manuell
+  * manuellerAufwand – Exakt eine Option: Kein Aufwand | Stunden | Tage | Wochen
+  * aktualisierungsfrequenz – Exakt eine Option: Echtzeit | Stündlich | Täglich | Wöchentlich | 14-tägig | Monatlich | Quartalsweise | Halbjährlich | Jährlich | On-Demand
+  * datenaktualitaet – Exakt eine Option: Aktuell | Veraltet
+  * approvalNachAenderung – Exakt eine Option: Kein Approval | Fachbereich | Management | Regulatorisch
+    aufwandKonkret – optional, nur wenn manuellerAufwand nicht "Kein Aufwand"
+    letztesReview – optional, Format MM.JJJJ
+
+Power BI Migration:
+  * komplexitaet – Exakt eine Option: Niedrig | Mittel | Hoch | Sehr hoch
+  * migrationsstatus – Exakt eine Option: Offen | In Analyse | In Entwicklung | In Review / Test | Abgeschlossen | Zurückgestellt | Nicht migrieren
+
+Priorisierung:
+  * prioritaet – Exakt eine Option: Kritisch | Hoch | Mittel | Niedrig
+    aufwandPt – optional (Zahl, Personentage)
+
+Notizen:
+    bemerkungen – optional
+
+VERHALTENSREGELN:
+- Ruf `update_fields` sofort auf, sobald du aus der Antwort einen Feldwert ableiten kannst. Nutze exakt die Optionswerte aus der Liste oben.
+- Frage nur nach noch fehlenden Pflichtfeldern. Optionale Felder nur wenn der Nutzer sie erwähnt oder sie sich natürlich ergeben.
+- Fasse thematisch verwandte Fragen zusammen (max. 2 pro Nachricht).
+- Wenn alle Pflichtfelder erfasst sind, ruf `complete_interview` auf.
+- Sei direkt und freundlich, kein unnötiges Smalltalk.
+
+Bereits erfasste Felder:
+{collected_json}
+
+Noch fehlende Pflichtfelder: {missing}
+"""
+
+_CHAT_TOOLS = [
+    {
+        "name": "update_fields",
+        "description": "Speichert extrahierte Feldwerte aus dem Gespräch. Sofort aufrufen wenn ein Wert klar ist.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "object",
+                    "description": "Key-Value-Paare: Feldschlüssel → Wert (bei Select-Feldern exakt die vorgegebenen Optionswerte)",
+                }
+            },
+            "required": ["fields"],
+        },
+    },
+    {
+        "name": "complete_interview",
+        "description": "Aufrufen wenn alle Pflichtfelder erfasst sind. Schließt die Erfassung ab.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "closing_message": {
+                    "type": "string",
+                    "description": "Kurze Abschlussbestätigung für den Nutzer",
+                }
+            },
+            "required": ["closing_message"],
+        },
+    },
+]
+
+
+def _build_chat_system(collected: dict) -> str:
+    filled = {k for k, v in collected.items() if v and v not in ("-", "")}
+    missing = [k for k in _REQUIRED_KEYS if k not in filled]
+    return _SYSTEM_TEMPLATE.format(
+        collected_json=json.dumps(collected, ensure_ascii=False, indent=2),
+        missing=", ".join(missing) if missing else "Alle Pflichtfelder erfasst!",
+    )
+
+
+def _block_to_dict(block: Any) -> dict[str, Any]:
+    if block.type == "text":
+        return {"type": "text", "text": block.text}
+    if block.type == "tool_use":
+        return {"type": "tool_use", "id": block.id, "name": block.name, "input": block.input}
+    return {}
+
+
+def _build_export_markdown(collected: dict) -> str:
+    lines = ["# Berichtskatalog-Eintrag", ""]
+    for field in _FIELD_META:
+        value = collected.get(field["key"]) or field["default"] or "-"
+        lines.append(f"- **{field['label']}:** {value}")
+    return "\n".join(lines)
+
+
+def run_chat(payload: dict) -> dict[str, Any]:
+    try:
+        import anthropic as _anthropic
+    except ImportError:
+        raise RuntimeError(
+            "Das 'anthropic'-Paket ist nicht installiert. Bitte: pip install anthropic"
+        )
+
+    if not ANTHROPIC_API_KEY:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY nicht gesetzt. Bitte in der .env-Datei eintragen und Server neu starten."
+        )
+
+    raw_messages = payload.get("messages", [])
+    collected: dict[str, Any] = dict(payload.get("collectedFields", {}))
+
+    if not isinstance(raw_messages, list):
+        raise ValueError("messages muss eine Liste sein.")
+
+    claude_messages: list[dict[str, Any]] = [
+        {"role": m["role"], "content": str(m["content"])}
+        for m in raw_messages
+        if m.get("role") in ("user", "assistant") and m.get("content")
+    ]
+
+    if not claude_messages or claude_messages[0]["role"] != "user":
+        raise ValueError("Die erste Nachricht muss vom Nutzer sein.")
+
+    client = _anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    complete = False
+    final_text = ""
+
+    for _ in range(8):
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system=_build_chat_system(collected),
+            messages=claude_messages,
+            tools=_CHAT_TOOLS,
+        )
+
+        text_parts: list[str] = []
+        tool_calls: list[Any] = []
+
+        for block in response.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+            elif block.type == "tool_use":
+                tool_calls.append(block)
+
+        if response.stop_reason != "tool_use" or not tool_calls:
+            final_text = " ".join(text_parts).strip()
+            break
+
+        tool_results: list[dict[str, Any]] = []
+        for tc in tool_calls:
+            if tc.name == "update_fields":
+                fields = tc.input.get("fields", {})
+                if isinstance(fields, dict):
+                    collected.update(fields)
+                tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
+            elif tc.name == "complete_interview":
+                complete = True
+                closing = tc.input.get("closing_message", "Erfassung abgeschlossen.")
+                final_text = " ".join(text_parts).strip() or closing
+                tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
+
+        claude_messages.append({"role": "assistant", "content": [_block_to_dict(b) for b in response.content]})
+        claude_messages.append({"role": "user", "content": tool_results})
+
+        if complete:
+            break
+
+    result: dict[str, Any] = {
+        "reply": final_text or "Ich habe Ihre Antwort verarbeitet.",
+        "collectedFields": collected,
+        "complete": complete,
+    }
+
+    if complete:
+        result["exportMarkdown"] = _build_export_markdown(collected)
+
+    return result
 
 
 @dataclass
@@ -344,6 +584,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if self._require_auth():
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/chat":
+            self._handle_chat()
+            return
         if parsed.path != "/api/reports":
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
             return
@@ -378,6 +621,21 @@ class AppHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": "Report not found."}, status=HTTPStatus.NOT_FOUND)
             return
         self._send_json({"deleted": True, "id": report_id})
+
+    def _handle_chat(self) -> None:
+        try:
+            payload = self._read_json_body()
+            result = run_chat(payload)
+            self._send_json(result)
+        except RuntimeError as error:
+            self._send_json({"error": str(error)}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+        except ValueError as error:
+            self._send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as error:
+            self._send_json(
+                {"error": f"Chat-Anfrage fehlgeschlagen: {error}"},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
 
     def end_headers(self) -> None:
         self._write_cors_headers()
