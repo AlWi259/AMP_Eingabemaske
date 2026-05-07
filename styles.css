@@ -819,6 +819,19 @@ html[data-theme="dark"] .saved-entry {
   30% { transform: translateY(-7px); opacity: 1; }
 }
 
+.chat-bubble--streaming::after {
+  content: "▋";
+  display: inline-block;
+  margin-left: 2px;
+  animation: chat-cursor 1s step-end infinite;
+  color: var(--brand);
+}
+
+@keyframes chat-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 .chat-input-row {
   display: flex;
   gap: 10px;

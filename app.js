@@ -362,6 +362,7 @@ const appState = {
   mode: "chat",
   chatMessages: [],
   chatLoading: false,
+  chatStreamingText: "",
   collectedFields: {},
 };
 
@@ -513,11 +514,13 @@ function renderChat() {
           .join("")}
         ${
           appState.chatLoading
-            ? `<div class="chat-typing">
-                <span class="chat-typing__dot"></span>
-                <span class="chat-typing__dot"></span>
-                <span class="chat-typing__dot"></span>
-               </div>`
+            ? appState.chatStreamingText
+              ? `<div class="chat-bubble chat-bubble--assistant chat-bubble--streaming">${renderChatMarkdown(appState.chatStreamingText)}</div>`
+              : `<div class="chat-typing">
+                  <span class="chat-typing__dot"></span>
+                  <span class="chat-typing__dot"></span>
+                  <span class="chat-typing__dot"></span>
+                 </div>`
             : ""
         }
       </div>
@@ -667,34 +670,73 @@ async function handleChatSubmit(event) {
   const input = document.querySelector("#chat-input");
   const text = input ? input.value.trim() : "";
 
-  if (!text || appState.chatLoading) {
-    return;
-  }
+  if (!text || appState.chatLoading) return;
 
   appState.chatMessages.push({ role: "user", content: text });
   appState.chatLoading = true;
+  appState.chatStreamingText = "";
   render();
 
   try {
-    const data = await requestJson(`${API_BASE_URL}/chat`, {
+    const response = await fetch(`${API_BASE_URL}/chat/stream`, {
       method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify({
         messages: appState.chatMessages,
         collectedFields: appState.collectedFields,
       }),
     });
 
-    if (data.collectedFields && typeof data.collectedFields === "object") {
-      appState.collectedFields = data.collectedFields;
-      appState.values = { ...buildInitialValues(), ...data.collectedFields };
+    if (!response.ok) {
+      const err = new Error(`HTTP ${response.status}`);
+      err.status = response.status;
+      throw err;
     }
 
-    if (data.reply) {
-      appState.chatMessages.push({ role: "assistant", content: data.reply });
-    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
 
-    if (data.complete) {
-      appState.mode = "complete";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+
+        let ev;
+        try { ev = JSON.parse(jsonStr); } catch { continue; }
+
+        if (ev.type === "delta") {
+          appState.chatStreamingText += ev.text;
+          const bubble = document.querySelector(".chat-bubble--streaming");
+          if (bubble) {
+            bubble.innerHTML = renderChatMarkdown(appState.chatStreamingText);
+            const msgs = document.querySelector("#chat-messages");
+            if (msgs) msgs.scrollTop = msgs.scrollHeight;
+          } else {
+            render();
+          }
+        } else if (ev.type === "done") {
+          if (ev.collectedFields && typeof ev.collectedFields === "object") {
+            appState.collectedFields = ev.collectedFields;
+            appState.values = { ...buildInitialValues(), ...ev.collectedFields };
+          }
+          const finalText = appState.chatStreamingText.trim() || "Ich habe Ihre Antwort verarbeitet.";
+          appState.chatMessages.push({ role: "assistant", content: finalText });
+          appState.chatStreamingText = "";
+          if (ev.complete) appState.mode = "complete";
+        } else if (ev.type === "error") {
+          appState.chatMessages.push({ role: "assistant", content: ev.message || "Ein Fehler ist aufgetreten." });
+          appState.chatStreamingText = "";
+        }
+      }
     }
   } catch (error) {
     const msg =
@@ -702,6 +744,7 @@ async function handleChatSubmit(event) {
         ? "ANTHROPIC_API_KEY fehlt oder ist ungültig. Bitte in der .env-Datei setzen und Server neu starten."
         : "Entschuldigung, es ist ein Fehler aufgetreten. Bitte erneut versuchen.";
     appState.chatMessages.push({ role: "assistant", content: msg });
+    appState.chatStreamingText = "";
   }
 
   appState.chatLoading = false;
@@ -790,6 +833,7 @@ function renderCompletion() {
     appState.mode = "chat";
     appState.chatMessages = [];
     appState.chatLoading = false;
+    appState.chatStreamingText = "";
     appState.collectedFields = {};
     appState.values = buildInitialValues();
     appState.otherDetails = {};

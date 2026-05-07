@@ -17,6 +17,20 @@ from uuid import uuid4
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+# Load .env for local development (won't overwrite vars already set by the host)
+_env_file = BASE_DIR / ".env"
+if _env_file.exists():
+    for _env_line in _env_file.read_text(encoding="utf-8").splitlines():
+        _env_line = _env_line.strip()
+        if not _env_line or _env_line.startswith("#") or "=" not in _env_line:
+            continue
+        _env_key, _, _env_val = _env_line.partition("=")
+        _env_key = _env_key.strip()
+        _env_val = _env_val.strip().strip('"').strip("'")
+        if _env_key and _env_key not in os.environ:
+            os.environ[_env_key] = _env_val
+
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "reports.sqlite3"
 JSON_PATH = DATA_DIR / "reports.json"
@@ -278,6 +292,92 @@ def run_chat(payload: dict) -> dict[str, Any]:
         result["exportMarkdown"] = _build_export_markdown(collected)
 
     return result
+
+
+def run_chat_stream(payload: dict):
+    try:
+        import anthropic as _anthropic
+    except ImportError:
+        yield {"type": "error", "message": "Das 'anthropic'-Paket ist nicht installiert."}
+        return
+
+    if not ANTHROPIC_API_KEY:
+        yield {"type": "error", "message": "ANTHROPIC_API_KEY nicht gesetzt."}
+        return
+
+    raw_messages = payload.get("messages", [])
+    collected: dict[str, Any] = dict(payload.get("collectedFields", {}))
+
+    if not isinstance(raw_messages, list):
+        yield {"type": "error", "message": "messages muss eine Liste sein."}
+        return
+
+    claude_messages: list[dict[str, Any]] = [
+        {"role": m["role"], "content": str(m["content"])}
+        for m in raw_messages
+        if m.get("role") in ("user", "assistant") and m.get("content")
+    ]
+
+    if not claude_messages or claude_messages[0]["role"] != "user":
+        yield {"type": "error", "message": "Die erste Nachricht muss vom Nutzer sein."}
+        return
+
+    client = _anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    complete = False
+    accumulated_text = ""
+
+    for _ in range(8):
+        iteration_text = ""
+
+        with client.messages.stream(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            temperature=0.75,
+            system=_build_chat_system(collected),
+            messages=claude_messages,
+            tools=_CHAT_TOOLS,
+        ) as stream:
+            for text_chunk in stream.text_stream:
+                iteration_text += text_chunk
+                accumulated_text += text_chunk
+                yield {"type": "delta", "text": text_chunk}
+            final_message = stream.get_final_message()
+
+        tool_calls_blocks = [b for b in final_message.content if b.type == "tool_use"]
+
+        if final_message.stop_reason != "tool_use" or not tool_calls_blocks:
+            break
+
+        tool_results: list[dict[str, Any]] = []
+        for tc in tool_calls_blocks:
+            if tc.name == "update_fields":
+                fields = tc.input.get("fields", {})
+                if isinstance(fields, dict):
+                    collected.update(fields)
+                tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
+            elif tc.name == "complete_interview":
+                complete = True
+                if not accumulated_text.strip():
+                    closing = tc.input.get("closing_message", "Erfassung abgeschlossen.")
+                    accumulated_text = closing
+                    yield {"type": "delta", "text": closing}
+                tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
+
+        claude_messages.append({"role": "assistant", "content": [_block_to_dict(b) for b in final_message.content]})
+        claude_messages.append({"role": "user", "content": tool_results})
+
+        if complete:
+            break
+
+    result: dict[str, Any] = {
+        "type": "done",
+        "collectedFields": collected,
+        "complete": complete,
+    }
+    if complete:
+        result["exportMarkdown"] = _build_export_markdown(collected)
+
+    yield result
 
 
 @dataclass
@@ -601,6 +701,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/chat":
             self._handle_chat()
             return
+        if parsed.path == "/api/chat/stream":
+            self._handle_chat_stream()
+            return
         if parsed.path != "/api/reports":
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
             return
@@ -650,6 +753,35 @@ class AppHandler(SimpleHTTPRequestHandler):
                 {"error": f"Chat-Anfrage fehlgeschlagen: {error}"},
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
+
+    def _handle_chat_stream(self) -> None:
+        try:
+            payload = self._read_json_body()
+        except Exception as error:
+            self._send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+        def _send_event(event: dict) -> None:
+            data = json.dumps(event, ensure_ascii=False)
+            self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+            self.wfile.flush()
+
+        try:
+            for event in run_chat_stream(payload):
+                _send_event(event)
+        except BrokenPipeError:
+            pass
+        except Exception as error:
+            try:
+                _send_event({"type": "error", "message": str(error)})
+            except Exception:
+                pass
 
     def end_headers(self) -> None:
         self._write_cors_headers()
