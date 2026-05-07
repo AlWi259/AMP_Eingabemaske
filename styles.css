@@ -580,6 +580,16 @@ html[data-theme="dark"] .saved-entry {
   color: var(--text);
 }
 
+.button--icon.button--primary-alt {
+  background: linear-gradient(135deg, var(--accantec-grey-dark), #1f1f23);
+  color: #ffffff;
+  border: none;
+}
+
+.button--icon.button--primary-alt:hover {
+  opacity: 0.88;
+}
+
 @media (max-width: 720px) {
   .page-shell {
     width: min(100% - 18px, 100%);

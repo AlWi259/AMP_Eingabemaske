@@ -797,11 +797,15 @@ function renderCompletion() {
             <rect x="2" y="13" width="12" height="1.5" rx="0.75"/>
           </svg>
         </button>
+        <button type="button" class="button button--icon button--primary-alt" id="restart-button" title="Neuer Bericht" aria-label="Neuer Bericht">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M9 1H3.5A1.5 1.5 0 002 2.5v11A1.5 1.5 0 003.5 15h9A1.5 1.5 0 0014 13.5V6l-5-5z"/>
+            <path d="M9 1v5h5" fill="none" stroke="white" stroke-width="1.2"/>
+            <path d="M8 9v4M6 11h4" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
         <button type="button" class="button button--primary" id="save-button" ${alreadySaved ? "disabled" : ""}>
           ${alreadySaved ? "Bereits gespeichert" : "Speichern"}
-        </button>
-        <button type="button" class="button button--primary-alt" id="restart-button">
-          Neuer Bericht
         </button>
       </div>
     </article>
