@@ -1,2 +1,9 @@
 __pycache__/
 data/
+.env
+node_modules/
+package-lock.json
+skills-lock.json
+.agents/
+.claude/
+vscode-chat-customizations-evaluation/
