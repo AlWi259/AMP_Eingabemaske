@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import json
 import os
 import sqlite3
@@ -309,7 +310,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         try:
             decoded = base64.b64decode(header[6:]).decode("utf-8")
             _, password = decoded.split(":", 1)
-            return password == APP_PASSWORD
+            return hmac.compare_digest(password, APP_PASSWORD)
         except Exception:
             return False
 

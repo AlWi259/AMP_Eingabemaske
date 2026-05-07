@@ -817,16 +817,7 @@ function renderCompletion() {
   });
 
   document.querySelector("#copy-button").addEventListener("click", async (event) => {
-    const btn = event.currentTarget;
-    try {
-      await navigator.clipboard.writeText(exportMarkdown);
-      btn.textContent = "Kopiert ✓";
-    } catch (error) {
-      btn.textContent = "Fehler";
-    }
-    window.setTimeout(() => {
-      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="4.5" y="0.5" width="10" height="10" rx="1.5" stroke="currentColor"/><path d="M2 4H1.5A1.5 1.5 0 000 5.5v8A1.5 1.5 0 001.5 15h8A1.5 1.5 0 0011 13.5V13H9.5v.5a.5.5 0 01-.5.5h-8a.5.5 0 01-.5-.5v-8a.5.5 0 01.5-.5H2V4z" fill="currentColor"/></svg> Kopieren`;
-    }, 1600);
+    copyWithFeedback(event.currentTarget, exportMarkdown);
   });
 
   document.querySelector("#download-button").addEventListener("click", () => {
@@ -1024,9 +1015,11 @@ function renderSavedEntries() {
     })
     .join("");
 
+  const entryById = new Map(appState.savedEntries.map((e) => [e.id, e]));
+
   savedEntriesContainer.querySelectorAll("[data-open-id]").forEach((button) => {
     button.addEventListener("click", () => {
-      const entry = appState.savedEntries.find((item) => item.id === button.dataset.openId);
+      const entry = entryById.get(button.dataset.openId);
       if (!entry || !entry.summary) {
         return;
       }
@@ -1041,31 +1034,20 @@ function renderSavedEntries() {
 
   savedEntriesContainer.querySelectorAll("[data-copy-id]").forEach((button) => {
     button.addEventListener("click", async () => {
-      const entry = appState.savedEntries.find((item) => item.id === button.dataset.copyId);
+      const entry = entryById.get(button.dataset.copyId);
       if (!entry) {
         return;
       }
-
-      try {
-        await navigator.clipboard.writeText(entry.exportMarkdown);
-        button.textContent = "Kopiert";
-      } catch (error) {
-        button.textContent = "Fehler";
-      }
-
-      window.setTimeout(() => {
-        button.textContent = "Kopieren";
-      }, 1400);
+      copyWithFeedback(button, entry.exportMarkdown);
     });
   });
 
   savedEntriesContainer.querySelectorAll("[data-download-id]").forEach((button) => {
     button.addEventListener("click", () => {
-      const entry = appState.savedEntries.find((item) => item.id === button.dataset.downloadId);
+      const entry = entryById.get(button.dataset.downloadId);
       if (!entry) {
         return;
       }
-
       downloadMarkdown(entry.exportMarkdown, entry.name);
     });
   });
@@ -1076,7 +1058,6 @@ function renderSavedEntries() {
       if (!reportId) {
         return;
       }
-
       try {
         await removeSavedEntry(reportId);
         appState.savedEntries = appState.savedEntries.filter((item) => item.id !== reportId);
@@ -1106,6 +1087,19 @@ function clearSaveFeedback() {
 function autoResizeTextarea(el) {
   el.style.height = "auto";
   el.style.height = el.scrollHeight + "px";
+}
+
+async function copyWithFeedback(btn, text) {
+  const original = btn.innerHTML;
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "Kopiert ✓";
+  } catch {
+    btn.textContent = "Fehler";
+  }
+  window.setTimeout(() => {
+    btn.innerHTML = original;
+  }, 1400);
 }
 
 function escapeHtml(value) {
