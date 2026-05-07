@@ -30,6 +30,18 @@
           <div class="brand-right">
             <button
               type="button"
+              class="call-button"
+              id="call-button"
+              aria-label="Sprachgespräch starten"
+              title="Bericht per Sprache erfassen"
+            >
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M7.5 1a2.5 2.5 0 00-2.5 2.5v4a2.5 2.5 0 005 0v-4A2.5 2.5 0 007.5 1zM5 7.5a2.5 2.5 0 005 0M3 6v1.5a4.5 4.5 0 009 0V6M7.5 12v2M5.5 14h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+              </svg>
+              Anrufen
+            </button>
+            <button
+              type="button"
               class="theme-toggle"
               id="theme-toggle"
               role="switch"
@@ -83,6 +95,14 @@
           <div id="saved-entries" class="saved-entries"></div>
         </section>
       </main>
+    </div>
+
+    <div id="voice-overlay" class="voice-overlay" hidden>
+      <div class="voice-orb-wrap">
+        <div class="voice-orb" id="voice-orb"></div>
+      </div>
+      <p class="voice-status" id="voice-status">Verbinde…</p>
+      <button type="button" class="voice-end-btn" id="voice-end-btn">Gespräch beenden</button>
     </div>
 
     <script src="./app.js"></script>

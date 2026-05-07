@@ -913,3 +913,91 @@ html[data-theme="dark"] .saved-entry {
     max-width: 92%;
   }
 }
+
+/* ── Call button ─────────────────────────────────────────────────────────── */
+
+.call-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--brand), #e45f18);
+  color: #fff;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.call-button:hover  { opacity: 0.88; }
+.call-button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Voice overlay ───────────────────────────────────────────────────────── */
+
+.voice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  background: rgba(20, 19, 24, 0.88);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.voice-orb-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 260px;
+  height: 260px;
+}
+
+.voice-orb {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 32%, #ffb870, #fc6a1c 48%, #b84b0d);
+  box-shadow:
+    0 0 0 0 rgba(252, 106, 28, 0),
+    0 0 40px 12px rgba(252, 106, 28, 0.55),
+    0 0 90px 30px rgba(252, 106, 28, 0.28),
+    0 0 160px 60px rgba(252, 106, 28, 0.12);
+  transform: scale(var(--orb-scale, 1));
+  will-change: transform;
+  animation: orb-breathe 2.8s ease-in-out infinite alternate;
+}
+
+@keyframes orb-breathe {
+  from { filter: brightness(1);   box-shadow: 0 0 40px 12px rgba(252,106,28,.55), 0 0  90px 30px rgba(252,106,28,.28), 0 0 160px 60px rgba(252,106,28,.12); }
+  to   { filter: brightness(1.12); box-shadow: 0 0 55px 18px rgba(252,106,28,.70), 0 0 110px 42px rgba(252,106,28,.36), 0 0 200px 80px rgba(252,106,28,.18); }
+}
+
+.voice-status {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.voice-end-btn {
+  padding: 12px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.78);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.voice-end-btn:hover { background: rgba(255, 255, 255, 0.14); }

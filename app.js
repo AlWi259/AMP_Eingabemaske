@@ -1125,3 +1125,224 @@ function escapeHtml(value) {
 function escapeAttribute(value) {
   return escapeHtml(value);
 }
+
+// ---------------------------------------------------------------------------
+// Voice mode — OpenAI Realtime API via WebRTC
+// ---------------------------------------------------------------------------
+
+const voiceOverlay  = document.querySelector("#voice-overlay");
+const voiceOrb      = document.querySelector("#voice-orb");
+const voiceStatus   = document.querySelector("#voice-status");
+const voiceEndBtn   = document.querySelector("#voice-end-btn");
+const callButton    = document.querySelector("#call-button");
+
+const voice = {
+  pc: null,
+  dc: null,
+  micStream: null,
+  audioEl: null,
+  audioCtx: null,
+  analyser: null,
+  animFrame: null,
+  collected: {},
+  orbTarget: 1,
+  orbCurrent: 1,
+};
+
+callButton.addEventListener("click", startVoiceCall);
+voiceEndBtn.addEventListener("click", () => endVoiceCall(false));
+
+async function startVoiceCall() {
+  voiceOverlay.hidden = false;
+  callButton.disabled = true;
+  setVoiceStatus("Verbinde…");
+
+  try {
+    // 1. Get ephemeral token from our server
+    const res = await fetch(`${API_BASE_URL}/realtime-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collectedFields: appState.collectedFields }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Session-Fehler");
+    }
+    const { token } = await res.json();
+
+    // 2. Microphone
+    voice.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    // 3. WebRTC peer connection
+    voice.pc = new RTCPeerConnection();
+    voice.micStream.getTracks().forEach((t) => voice.pc.addTrack(t, voice.micStream));
+
+    // 4. Incoming audio → play + analyse
+    voice.pc.ontrack = (e) => {
+      voice.audioEl = new Audio();
+      voice.audioEl.srcObject = e.streams[0];
+      voice.audioEl.play();
+      setupOrbAnalyser(e.streams[0]);
+    };
+
+    // 5. Data channel for events
+    voice.dc = voice.pc.createDataChannel("oai-events");
+    voice.dc.onopen  = () => setVoiceStatus("Zuhören…");
+    voice.dc.onclose = () => endVoiceCall(false);
+    voice.dc.onmessage = handleRealtimeEvent;
+
+    // 6. SDP offer → OpenAI
+    const offer = await voice.pc.createOffer();
+    await voice.pc.setLocalDescription(offer);
+
+    const sdpRes = await fetch(
+      "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/sdp",
+        },
+        body: offer.sdp,
+      }
+    );
+    if (!sdpRes.ok) throw new Error("WebRTC-Verbindung fehlgeschlagen");
+
+    await voice.pc.setRemoteDescription({ type: "answer", sdp: await sdpRes.text() });
+    animateOrb();
+
+  } catch (err) {
+    setVoiceStatus(`Fehler: ${err.message}`);
+    window.setTimeout(() => endVoiceCall(false), 2500);
+  }
+}
+
+function handleRealtimeEvent(e) {
+  let event;
+  try { event = JSON.parse(e.data); } catch { return; }
+
+  switch (event.type) {
+    case "input_audio_buffer.speech_started":
+      setVoiceStatus("Sie sprechen…");
+      voice.orbTarget = 1.12;
+      break;
+
+    case "input_audio_buffer.speech_stopped":
+    case "input_audio_buffer.committed":
+      setVoiceStatus("Verarbeite…");
+      voice.orbTarget = 1.0;
+      break;
+
+    case "response.audio.delta":
+      setVoiceStatus("Spricht…");
+      voice.orbTarget = 1.2;
+      break;
+
+    case "response.done": {
+      voice.orbTarget = 1.0;
+      setVoiceStatus("Zuhören…");
+      const output = event.response?.output ?? [];
+      output.forEach((item) => {
+        if (item.type === "function_call") {
+          handleVoiceToolCall(item.name, item.arguments, item.call_id);
+        }
+      });
+      break;
+    }
+
+    case "error":
+      setVoiceStatus(`Fehler: ${event.error?.message ?? "Unbekannt"}`);
+      break;
+  }
+}
+
+function handleVoiceToolCall(name, argsRaw, callId) {
+  let args;
+  try { args = JSON.parse(argsRaw); } catch { args = {}; }
+
+  if (name === "update_fields" && args.fields) {
+    Object.assign(voice.collected, args.fields);
+  } else if (name === "complete_interview") {
+    applyVoiceFieldsToForm(voice.collected);
+    setVoiceStatus("Erfassung abgeschlossen ✓");
+    window.setTimeout(() => endVoiceCall(true), 1800);
+  }
+
+  if (voice.dc?.readyState === "open") {
+    voice.dc.send(JSON.stringify({
+      type: "conversation.item.create",
+      item: { type: "function_call_output", call_id: callId, output: "OK" },
+    }));
+    if (name !== "complete_interview") {
+      voice.dc.send(JSON.stringify({ type: "response.create" }));
+    }
+  }
+}
+
+function applyVoiceFieldsToForm(collected) {
+  appState.collectedFields = { ...appState.collectedFields, ...collected };
+  appState.values = { ...buildInitialValues(), ...collected };
+  appState.otherDetails = {};
+  appState.currentIndex = 0;
+  clearSaveFeedback();
+}
+
+function endVoiceCall(completed) {
+  if (voice.animFrame) { cancelAnimationFrame(voice.animFrame); voice.animFrame = null; }
+  if (voice.audioCtx)  { voice.audioCtx.close().catch(() => {}); voice.audioCtx = null; }
+  if (voice.dc)        { voice.dc.close(); voice.dc = null; }
+  if (voice.pc)        { voice.pc.close(); voice.pc = null; }
+  if (voice.micStream) { voice.micStream.getTracks().forEach((t) => t.stop()); voice.micStream = null; }
+  if (voice.audioEl)   { voice.audioEl.srcObject = null; voice.audioEl = null; }
+
+  voice.collected  = {};
+  voice.orbTarget  = 1;
+  voice.orbCurrent = 1;
+  voiceOrb.style.setProperty("--orb-scale", "1");
+
+  voiceOverlay.hidden = true;
+  callButton.disabled = false;
+
+  if (completed) {
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
+
+function setupOrbAnalyser(stream) {
+  try {
+    voice.audioCtx = new AudioContext();
+    voice.analyser = voice.audioCtx.createAnalyser();
+    voice.analyser.fftSize = 256;
+    voice.analyser.smoothingTimeConstant = 0.8;
+    voice.audioCtx.createMediaStreamSource(stream).connect(voice.analyser);
+  } catch {
+    // AudioContext not available — orb still animates via event-driven target
+  }
+}
+
+function animateOrb() {
+  const data = voice.analyser ? new Uint8Array(voice.analyser.frequencyBinCount) : null;
+
+  function tick() {
+    voice.animFrame = requestAnimationFrame(tick);
+
+    if (data && voice.analyser) {
+      voice.analyser.getByteFrequencyData(data);
+      const avg = data.reduce((s, v) => s + v, 0) / data.length;
+      const audioScale = 1 + (avg / 255) * 0.45;
+      voice.orbTarget = Math.max(voice.orbTarget, audioScale);
+    }
+
+    voice.orbCurrent += (voice.orbTarget - voice.orbCurrent) * 0.12;
+    voice.orbTarget  += (1.0 - voice.orbTarget) * 0.04;
+
+    voiceOrb.style.setProperty("--orb-scale", voice.orbCurrent.toFixed(3));
+  }
+
+  tick();
+}
+
+function setVoiceStatus(text) {
+  voiceStatus.textContent = text;
+}
