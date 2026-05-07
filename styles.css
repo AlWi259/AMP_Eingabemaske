@@ -946,7 +946,7 @@ html[data-theme="dark"] .saved-entry {
   align-items: center;
   justify-content: center;
   gap: 32px;
-  background: rgba(20, 19, 24, 0.4);
+  background: rgba(20, 19, 24, 0.6);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }

@@ -1288,20 +1288,23 @@ function applyVoiceFieldsToForm(collected) {
 }
 
 function endVoiceCall(completed) {
-  if (voice.animFrame) { cancelAnimationFrame(voice.animFrame); voice.animFrame = null; }
-  if (voice.audioCtx)  { voice.audioCtx.close().catch(() => {}); voice.audioCtx = null; }
-  if (voice.dc)        { voice.dc.close(); voice.dc = null; }
-  if (voice.pc)        { voice.pc.close(); voice.pc = null; }
-  if (voice.micStream) { voice.micStream.getTracks().forEach((t) => t.stop()); voice.micStream = null; }
-  if (voice.audioEl)   { voice.audioEl.srcObject = null; voice.audioEl = null; }
-
-  voice.collected  = {};
-  voice.orbTarget  = 1;
-  voice.orbCurrent = 1;
-  voiceOrb.style.setProperty("--orb-scale", "1");
-
+  // Close overlay first — always, regardless of cleanup errors below
   voiceOverlay.hidden = true;
   callButton.disabled = false;
+
+  try {
+    if (voice.animFrame) { cancelAnimationFrame(voice.animFrame); voice.animFrame = null; }
+    if (voice.audioCtx)  { voice.audioCtx.close().catch(() => {}); voice.audioCtx = null; }
+    if (voice.dc)        { try { voice.dc.close(); } catch {} voice.dc = null; }
+    if (voice.pc)        { try { voice.pc.close(); } catch {} voice.pc = null; }
+    if (voice.micStream) { voice.micStream.getTracks().forEach((t) => t.stop()); voice.micStream = null; }
+    if (voice.audioEl)   { voice.audioEl.srcObject = null; voice.audioEl = null; }
+
+    voice.collected  = {};
+    voice.orbTarget  = 1;
+    voice.orbCurrent = 1;
+    voiceOrb.style.setProperty("--orb-scale", "1");
+  } catch {}
 
   if (completed) {
     render();
