@@ -314,8 +314,10 @@ html[data-theme="dark"] textarea {
 }
 
 textarea {
-  min-height: 142px;
-  resize: vertical;
+  min-height: 54px;
+  max-height: 142px;
+  resize: none;
+  overflow-y: auto;
 }
 
 input:focus,

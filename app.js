@@ -542,6 +542,12 @@ function renderAssistantContent() {
     fieldInput.addEventListener("change", handleSelectChange);
   }
 
+  const textarea = assistantContent.querySelector("textarea");
+  if (textarea) {
+    autoResizeTextarea(textarea);
+    textarea.addEventListener("input", () => autoResizeTextarea(textarea));
+  }
+
   if (fieldInput) {
     fieldInput.focus();
   }
@@ -1080,6 +1086,11 @@ function setStatus(message, variant = "success") {
 function clearSaveFeedback() {
   appState.status = { message: "", variant: "success" };
   appState.lastSavedSignature = "";
+}
+
+function autoResizeTextarea(el) {
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
 }
 
 function escapeHtml(value) {
