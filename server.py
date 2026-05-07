@@ -734,11 +734,11 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
-        if self._require_auth():
-            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/realtime-session":
             self._handle_realtime_session()
+            return
+        if self._require_auth():
             return
         if parsed.path == "/api/chat":
             self._handle_chat()
