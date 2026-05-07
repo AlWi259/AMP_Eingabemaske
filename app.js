@@ -770,6 +770,15 @@ function renderCompletion() {
       </p>
 
       <div class="summary-export">
+        <div class="summary-export__toolbar">
+          <button type="button" class="summary-copy-btn" id="copy-button" aria-label="Markdown kopieren">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect x="4.5" y="0.5" width="10" height="10" rx="1.5" stroke="currentColor"/>
+              <path d="M2 4H1.5A1.5 1.5 0 000 5.5v8A1.5 1.5 0 001.5 15h8A1.5 1.5 0 0011 13.5V13H9.5v.5a.5.5 0 01-.5.5h-8a.5.5 0 01-.5-.5v-8a.5.5 0 01.5-.5H2V4z" fill="currentColor"/>
+            </svg>
+            Kopieren
+          </button>
+        </div>
         <pre>${escapeHtml(exportMarkdown)}</pre>
       </div>
 
@@ -782,11 +791,11 @@ function renderCompletion() {
           <span class="button__icon" aria-hidden="true">&larr;</span>
           <span class="button__label">Zurück</span>
         </button>
-        <button type="button" class="button button--subtle" id="copy-button">
-          Markdown kopieren
-        </button>
-        <button type="button" class="button button--subtle" id="download-button">
-          Markdown exportieren
+        <button type="button" class="button button--icon" id="download-button" title="Markdown exportieren" aria-label="Markdown exportieren">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M8 11.5L3.5 7H6.5V2H9.5V7H12.5L8 11.5Z"/>
+            <rect x="2" y="13" width="12" height="1.5" rx="0.75"/>
+          </svg>
         </button>
         <button type="button" class="button button--primary" id="save-button" ${alreadySaved ? "disabled" : ""}>
           ${alreadySaved ? "Bereits gespeichert" : "Speichern"}
@@ -804,14 +813,17 @@ function renderCompletion() {
     render();
   });
 
-  document.querySelector("#copy-button").addEventListener("click", async () => {
+  document.querySelector("#copy-button").addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
     try {
       await navigator.clipboard.writeText(exportMarkdown);
-      setStatus("Markdown kopiert.");
+      btn.textContent = "Kopiert ✓";
     } catch (error) {
-      setStatus("Kopieren nicht möglich.", "error");
+      btn.textContent = "Fehler";
     }
-    render();
+    window.setTimeout(() => {
+      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="4.5" y="0.5" width="10" height="10" rx="1.5" stroke="currentColor"/><path d="M2 4H1.5A1.5 1.5 0 000 5.5v8A1.5 1.5 0 001.5 15h8A1.5 1.5 0 0011 13.5V13H9.5v.5a.5.5 0 01-.5.5h-8a.5.5 0 01-.5-.5v-8a.5.5 0 01.5-.5H2V4z" fill="currentColor"/></svg> Kopieren`;
+    }, 1600);
   });
 
   document.querySelector("#download-button").addEventListener("click", () => {

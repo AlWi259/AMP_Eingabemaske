@@ -385,9 +385,16 @@ html[data-theme="dark"] textarea:focus {
   margin-top: 20px;
 }
 
-.actions__group,
-.completion-actions {
+.actions__group {
   flex-wrap: wrap;
+}
+
+.completion-actions {
+  flex-wrap: nowrap;
+}
+
+.completion-actions #summary-back-button {
+  margin-right: auto;
 }
 
 .actions__group {
@@ -514,12 +521,42 @@ html[data-theme="dark"] .saved-entry {
 }
 
 .summary-export {
+  position: relative;
   margin-top: 18px;
   padding: 20px;
   border-radius: var(--radius-lg);
   background: #17161b;
   color: #eff5fb;
-  overflow: auto;
+}
+
+.summary-export__toolbar {
+  position: sticky;
+  top: 16px;
+  float: right;
+  margin-left: 12px;
+  margin-bottom: 8px;
+  z-index: 1;
+}
+
+.summary-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eff5fb;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.summary-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .summary-export pre {
@@ -529,16 +566,47 @@ html[data-theme="dark"] .saved-entry {
   line-height: 1.55;
 }
 
+.button--icon {
+  padding: 0;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.button--icon:hover {
+  color: var(--text);
+}
+
 @media (max-width: 720px) {
   .page-shell {
     width: min(100% - 18px, 100%);
     padding-top: 12px;
   }
 
-  .assistant-card__header,
-  .completion-actions {
+  .assistant-card__header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .completion-actions {
+    flex-wrap: wrap;
+  }
+
+  .completion-actions #summary-back-button {
+    margin-right: 0;
+    width: 100%;
+  }
+
+  .completion-actions #download-button {
+    flex: 1;
+  }
+
+  .completion-actions #save-button,
+  .completion-actions #restart-button {
+    flex: 1;
   }
 
   .brandbar-inner {
