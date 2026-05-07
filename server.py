@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sqlite3
@@ -21,6 +22,7 @@ JSON_PATH = DATA_DIR / "reports.json"
 DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 
 
 @dataclass
@@ -298,12 +300,36 @@ class AppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args: Any, directory: str | None = None, **kwargs: Any) -> None:
         super().__init__(*args, directory=str(BASE_DIR), **kwargs)
 
+    def _is_authorized(self) -> bool:
+        if not APP_PASSWORD:
+            return True
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        try:
+            decoded = base64.b64decode(header[6:]).decode("utf-8")
+            _, password = decoded.split(":", 1)
+            return password == APP_PASSWORD
+        except Exception:
+            return False
+
+    def _require_auth(self) -> bool:
+        if self._is_authorized():
+            return False
+        self.send_response(HTTPStatus.UNAUTHORIZED)
+        self.send_header("WWW-Authenticate", 'Basic realm="Berichtskatalog"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return True
+
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self._write_cors_headers()
         self.end_headers()
 
     def do_GET(self) -> None:
+        if self._require_auth():
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/health":
             self._send_json({"ok": True})
@@ -314,6 +340,8 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
+        if self._require_auth():
+            return
         parsed = urlparse(self.path)
         if parsed.path != "/api/reports":
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
@@ -333,6 +361,8 @@ class AppHandler(SimpleHTTPRequestHandler):
         self._send_json({"entry": entry}, status=HTTPStatus.CREATED)
 
     def do_DELETE(self) -> None:
+        if self._require_auth():
+            return
         parsed = urlparse(self.path)
         prefix = "/api/reports/"
         if not parsed.path.startswith(prefix):
