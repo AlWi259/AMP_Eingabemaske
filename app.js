@@ -864,17 +864,21 @@ async function saveCurrentReport(signature, exportMarkdown) {
   }
 }
 
-function downloadMarkdown(markdown) {
-  const summary = buildNormalizedSummary();
-  const fileNameBase = (summary.berichtsname || "berichtskatalog")
+function downloadMarkdown(markdown, berichtsname) {
+  const name = berichtsname || buildNormalizedSummary().berichtsname || "berichtskatalog";
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const nameSlug = name
     .toLowerCase()
     .replaceAll(/[^a-z0-9äöüß]+/gi, "-")
-    .replaceAll(/^-+|-+$/g, "");
+    .replaceAll(/^-+|-+$/g, "") || "berichtskatalog";
   const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${fileNameBase || "berichtskatalog"}.md`;
+  link.download = `${yyyy}-${mm}_${dd}_${nameSlug}.md`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -981,6 +985,9 @@ function renderSavedEntries() {
           <p class="saved-entry__title">${escapeHtml(entry.name)}</p>
           <p class="saved-entry__meta">${escapeHtml(entry.fachabteilung)} • ${escapeHtml(entry.timestamp)}</p>
           <div class="saved-entry__actions">
+            <button class="link-button" type="button" data-open-id="${escapeAttribute(entry.id)}">
+              Öffnen
+            </button>
             <button class="link-button" type="button" data-copy-id="${escapeAttribute(entry.id)}">
               Kopieren
             </button>
@@ -995,6 +1002,21 @@ function renderSavedEntries() {
       `;
     })
     .join("");
+
+  savedEntriesContainer.querySelectorAll("[data-open-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const entry = appState.savedEntries.find((item) => item.id === button.dataset.openId);
+      if (!entry || !entry.summary) {
+        return;
+      }
+      appState.values = { ...buildInitialValues(), ...entry.summary };
+      appState.otherDetails = {};
+      appState.currentIndex = 0;
+      clearSaveFeedback();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
 
   savedEntriesContainer.querySelectorAll("[data-copy-id]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -1023,7 +1045,7 @@ function renderSavedEntries() {
         return;
       }
 
-      downloadMarkdown(entry.exportMarkdown);
+      downloadMarkdown(entry.exportMarkdown, entry.name);
     });
   });
 
