@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import smtplib
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +27,12 @@ JSON_PATH = DATA_DIR / "reports.json"
 DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+MAIL_TO = os.environ.get("MAIL_TO", "a.winkelmann@accantec.com")
 
 
 @dataclass
@@ -260,6 +272,59 @@ class ReportStore:
 
 
 # ------------------------------------------------------------------
+# E-Mail-Versand
+# ------------------------------------------------------------------
+
+def _send_report_email(report: dict[str, Any]) -> None:
+    if not SMTP_HOST or not SMTP_USER or not SMTP_PASSWORD:
+        return
+
+    name = report.get("name", "Unbenannter Bericht")
+    fachabteilung = report.get("fachabteilung", "-")
+    timestamp = report.get("timestamp", "")
+    markdown = report.get("exportMarkdown", "")
+
+    msg = MIMEMultipart()
+    msg["From"] = SMTP_USER
+    msg["To"] = MAIL_TO
+    msg["Subject"] = f"Neuer Berichtskatalog-Eintrag: {name}"
+
+    body = (
+        f"Ein neuer Berichtskatalog-Eintrag wurde gespeichert.\n\n"
+        f"Bericht: {name}\n"
+        f"Fachabteilung: {fachabteilung}\n"
+        f"Zeitstempel: {timestamp}\n\n"
+        f"Die Markdown-Datei ist als Anhang beigefügt."
+    )
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    filename = (
+        name.lower()
+        .replace(" ", "-")
+        .replace("/", "-")
+        + ".md"
+    )
+    attachment = MIMEBase("application", "octet-stream")
+    attachment.set_payload(markdown.encode("utf-8"))
+    encoders.encode_base64(attachment)
+    attachment.add_header("Content-Disposition", f'attachment; filename="{filename}"')
+    msg.attach(attachment)
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_USER, MAIL_TO, msg.as_string())
+    except Exception:
+        pass  # E-Mail-Fehler sollen den Speichervorgang nicht blockieren
+
+
+def _send_report_email_async(report: dict[str, Any]) -> None:
+    threading.Thread(target=_send_report_email, args=(report,), daemon=True).start()
+
+
+# ------------------------------------------------------------------
 # Shared helpers
 # ------------------------------------------------------------------
 
@@ -330,6 +395,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         except json.JSONDecodeError:
             self._send_json({"error": "Invalid JSON body."}, status=HTTPStatus.BAD_REQUEST)
             return
+        _send_report_email_async(entry)
         self._send_json({"entry": entry}, status=HTTPStatus.CREATED)
 
     def do_DELETE(self) -> None:
