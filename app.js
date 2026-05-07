@@ -3,8 +3,9 @@ const API_BASE_URL =
   window.location.protocol === "file:" ? "http://127.0.0.1:8000/api" : `${window.location.origin}/api`;
 
 const CHAT_GREETING =
-  "Guten Tag! Ich nehme heute Ihren Bericht für den Katalog auf. " +
-  "Erzählen Sie mir einfach: Welchen Bericht schauen wir uns heute an, und was leistet er für Sie?";
+  "Guten Tag! Ich nehme heute einen Berichtskatalog-Eintrag mit Ihnen auf. " +
+  "Bevor wir starten – darf ich fragen: Wer sind Sie, und in welcher Abteilung arbeiten Sie? " +
+  "Und dann direkt: Welchen Bericht schauen wir uns heute an, und was leistet er für Sie?";
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
