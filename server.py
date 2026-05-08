@@ -941,6 +941,12 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self) -> None:
         self._write_cors_headers()
+        # Prevent browsers from caching static assets so deploys take effect immediately
+        path = getattr(self, "path", "") or ""
+        if any(path.split("?")[0].endswith(ext) for ext in (".css", ".js", ".html")):
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
         super().end_headers()
 
     def log_message(self, format: str, *args: Any) -> None:
