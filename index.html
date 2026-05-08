@@ -27,6 +27,24 @@
             <h1>Berichtskatalog</h1>
           </div>
 
+          <nav class="app-nav" id="app-nav">
+            <button class="app-nav__tab app-nav__tab--active" data-tab="chat">
+              <svg width="14" height="14" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M1 1.5A.5.5 0 011.5 1h12a.5.5 0 01.5.5v9a.5.5 0 01-.5.5H8l-3 3v-3H1.5a.5.5 0 01-.5-.5v-9z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              </svg>
+              Erfassung
+            </button>
+            <button class="app-nav__tab" data-tab="entries">
+              <svg width="14" height="14" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="1" y="1" width="13" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="4" y1="5" x2="11" y2="5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <line x1="4" y1="8" x2="11" y2="8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <line x1="4" y1="11" x2="8" y2="11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+              Gespeicherte Einträge
+            </button>
+          </nav>
+
           <div class="brand-right">
             <button
               type="button"
@@ -54,24 +72,6 @@
           </div>
         </div>
       </header>
-
-      <nav class="app-nav" id="app-nav">
-        <button class="app-nav__tab app-nav__tab--active" data-tab="chat">
-          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M1 1.5A.5.5 0 011.5 1h12a.5.5 0 01.5.5v9a.5.5 0 01-.5.5H8l-3 3v-3H1.5a.5.5 0 01-.5-.5v-9z" stroke="currentColor" stroke-width="1.2" fill="none"/>
-          </svg>
-          Erfassung
-        </button>
-        <button class="app-nav__tab" data-tab="entries">
-          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="1" y="1" width="13" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
-            <line x1="4" y1="5" x2="11" y2="5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            <line x1="4" y1="8" x2="11" y2="8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            <line x1="4" y1="11" x2="8" y2="11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-          </svg>
-          Gespeicherte Einträge
-        </button>
-      </nav>
 
       <main class="page-content">
         <section class="assistant-card" id="tab-chat">

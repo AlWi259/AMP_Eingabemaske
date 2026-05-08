@@ -4,7 +4,7 @@ const API_BASE_URL =
 
 const CHAT_GREETING =
   "Guten Tag! Ich nehme heute Ihren Bericht für den Katalog auf. " +
-  "Mit wem habe ich das Vergnügen?";
+  "Fangen wir direkt an: Wie heißt der Bericht, den wir heute erfassen?";
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
@@ -106,8 +106,7 @@ const fieldDefinitions = [
     label: "IT-Ansprechpartner",
     type: "text",
     category: "Verantwortung",
-    required: false,
-    defaultValue: "-",
+    required: true,
     placeholder: "z. B. Max Mustermann",
   },
   {
@@ -281,8 +280,8 @@ const fieldDefinitions = [
     label: "Letztes Review",
     type: "monthText",
     category: "Qualität & Betrieb",
-    required: false,
-    defaultValue: "Unbekannt",
+    required: true,
+    defaultValue: "03.2025",
     placeholder: "z. B. 03.2025",
   },
   {
@@ -365,9 +364,13 @@ const appState = {
   chatStreamingText: "",
   collectedFields: {},
   auditNote: "",
+  partialEntryId: null,
+  completionOrigin: "chat",
+  _restoredFromSession: false,
 };
 
 applyTheme(appState.theme);
+tryRestoreSession();
 themeToggle.addEventListener("click", toggleTheme);
 appNav.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-tab]");
@@ -505,6 +508,11 @@ function renderChat() {
 
   assistantContent.innerHTML = `
     <div class="chat-container">
+      ${appState._restoredFromSession ? `
+        <div class="chat-restore-banner">
+          Erfassung wiederhergestellt.
+          <button type="button" class="chat-restore-discard" id="discard-session-btn">Neu starten</button>
+        </div>` : ""}
       <div class="chat-messages" id="chat-messages">
         <div class="chat-bubble chat-bubble--assistant">${renderChatMarkdown(CHAT_GREETING)}</div>
         ${appState.chatMessages
@@ -524,6 +532,10 @@ function renderChat() {
                  </div>`
             : ""
         }
+      </div>
+      <div class="chat-end-row">
+        <button type="button" class="chat-save-partial-btn" id="chat-save-partial-button" ${appState.chatLoading ? "disabled" : ""}>Zwischenspeichern</button>
+        <button type="button" class="chat-end-btn" id="chat-end-button">Erfassung abbrechen</button>
       </div>
       <form class="chat-input-row" id="chat-form" ${appState.chatLoading ? "inert" : ""}>
         <textarea
@@ -563,6 +575,51 @@ function renderChat() {
 
   if (form) {
     form.addEventListener("submit", handleChatSubmit);
+  }
+
+  const endBtn = document.querySelector("#chat-end-button");
+  if (endBtn) {
+    endBtn.addEventListener("click", async () => {
+      if (!window.confirm("Erfassung wirklich abbrechen? Alle bisherigen Eingaben gehen verloren.")) return;
+      if (appState.partialEntryId) {
+        try { await removeSavedEntry(appState.partialEntryId); } catch (_) {}
+      }
+      appState.mode = "chat";
+      appState.chatMessages = [];
+      appState.chatLoading = false;
+      appState.chatStreamingText = "";
+      appState.collectedFields = {};
+      appState.auditNote = "";
+      appState.partialEntryId = null;
+      appState._restoredFromSession = false;
+      appState.values = buildInitialValues();
+      appState.otherDetails = {};
+      clearSaveFeedback();
+      clearSession();
+      render();
+    });
+  }
+
+  const savePartialBtn = document.querySelector("#chat-save-partial-button");
+  if (savePartialBtn) {
+    savePartialBtn.addEventListener("click", () => handleSavePartial(savePartialBtn));
+  }
+
+  const discardBtn = document.querySelector("#discard-session-btn");
+  if (discardBtn) {
+    discardBtn.addEventListener("click", async () => {
+      if (appState.partialEntryId) {
+        try { await removeSavedEntry(appState.partialEntryId); } catch (_) {}
+      }
+      appState.chatMessages = [];
+      appState.collectedFields = {};
+      appState.auditNote = "";
+      appState.partialEntryId = null;
+      appState._restoredFromSession = false;
+      appState.values = buildInitialValues();
+      clearSession();
+      render();
+    });
   }
 
   if (input) {
@@ -632,6 +689,7 @@ function startMicRecognition(inputEl, formEl) {
   recognition = new SpeechRecognition();
   recognition.lang = "de-DE";
   recognition.interimResults = false;
+  recognition.continuous = true;
   recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
@@ -647,7 +705,8 @@ function startMicRecognition(inputEl, formEl) {
   };
 
   recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
+    const transcript = event.results[event.results.length - 1][0].transcript;
+    recognition.stop();
     const input = document.querySelector("#chat-input");
     if (input) {
       input.value = (input.value ? input.value + " " : "") + transcript;
@@ -793,7 +852,21 @@ async function handleChatSubmit(event) {
           const finalText = appState.chatStreamingText.trim() || "Ich habe Ihre Antwort verarbeitet.";
           appState.chatMessages.push({ role: "assistant", content: finalText });
           appState.chatStreamingText = "";
-          if (ev.complete) appState.mode = "complete";
+          if (ev.complete) {
+            appState.mode = "complete";
+            appState.completionOrigin = "chat";
+            clearSession();
+            // Auto-delete partial entry from DB now that interview is complete
+            if (appState.partialEntryId) {
+              const oldPartialId = appState.partialEntryId;
+              appState.partialEntryId = null;
+              removeSavedEntry(oldPartialId).then(() => {
+                appState.savedEntries = appState.savedEntries.filter((e) => e.id !== oldPartialId);
+              }).catch(() => {});
+            }
+          } else {
+            saveSession();
+          }
 
         } else if (ev.type === "error") {
           const errMsg = ev.message || "Ein Fehler ist aufgetreten.";
@@ -817,6 +890,62 @@ async function handleChatSubmit(event) {
 
   appState.chatLoading = false;
   _chatFinalize(appState.mode === "complete");
+}
+
+// ---------------------------------------------------------------------------
+// Partial save (Zwischenspeichern)
+// ---------------------------------------------------------------------------
+
+async function handleSavePartial(btn) {
+  if (appState.chatMessages.length === 0) return;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Wird gespeichert…";
+
+  try {
+    // Remove previous partial entry for this session before creating a new one
+    if (appState.partialEntryId) {
+      try { await removeSavedEntry(appState.partialEntryId); } catch (_) {}
+      appState.partialEntryId = null;
+    }
+
+    const name = appState.collectedFields.berichtsname || "Laufende Erfassung";
+    const fachabteilung = appState.collectedFields.fachabteilung || "-";
+    const sig = "partial_" + generateId();
+
+    const entry = await createSavedEntry({
+      signature: sig,
+      name,
+      fachabteilung,
+      timestamp: new Date().toLocaleString("de-DE"),
+      exportMarkdown: buildExportMarkdown(),
+      summary: appState.collectedFields,
+      complete: false,
+      chatMessages: appState.chatMessages,
+      auditNote: appState.auditNote,
+    });
+
+    appState.partialEntryId = entry.id;
+    appState.savedEntries = [entry, ...appState.savedEntries.filter((e) => e.id !== entry.id)];
+    saveSession();
+
+    btn.textContent = "Gespeichert ✓";
+    window.setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 1800);
+  } catch (_) {
+    btn.textContent = "Fehler";
+    window.setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 1800);
+  }
+}
+
+function generateId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 // ---------------------------------------------------------------------------
@@ -879,7 +1008,18 @@ function renderCompletion() {
   document.querySelector("#summary-back-button").addEventListener("click", () => {
     clearSaveFeedback();
     appState.mode = "chat";
-    render();
+    if (appState.completionOrigin === "saved-entries") {
+      appState.completionOrigin = "chat";
+      // Navigate back to the entries tab
+      appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
+      appNav.querySelector("[data-tab='entries']").classList.add("app-nav__tab--active");
+      tabChat.hidden = true;
+      tabEntries.hidden = false;
+      renderSavedEntries();
+    } else {
+      appState.completionOrigin = "chat";
+      render();
+    }
   });
 
   document.querySelector("#copy-button").addEventListener("click", async (event) => {
@@ -897,16 +1037,22 @@ function renderCompletion() {
     render();
   });
 
-  document.querySelector("#restart-button").addEventListener("click", () => {
+  document.querySelector("#restart-button").addEventListener("click", async () => {
+    if (appState.partialEntryId) {
+      try { await removeSavedEntry(appState.partialEntryId); appState.savedEntries = appState.savedEntries.filter((e) => e.id !== appState.partialEntryId); } catch (_) {}
+    }
     appState.mode = "chat";
     appState.chatMessages = [];
     appState.chatLoading = false;
     appState.chatStreamingText = "";
     appState.collectedFields = {};
     appState.auditNote = "";
+    appState.partialEntryId = null;
+    appState._restoredFromSession = false;
     appState.values = buildInitialValues();
     appState.otherDetails = {};
     clearSaveFeedback();
+    clearSession();
     render();
   });
 }
@@ -936,6 +1082,13 @@ async function saveCurrentReport(signature, exportMarkdown) {
     appState.savedEntriesError = "";
     appState.lastSavedSignature = signature;
     setStatus("Bericht gespeichert.");
+    // Clean up partial entry if it still exists
+    if (appState.partialEntryId) {
+      const oldId = appState.partialEntryId;
+      appState.partialEntryId = null;
+      appState.savedEntries = appState.savedEntries.filter((e) => e.id !== oldId);
+      removeSavedEntry(oldId).catch(() => {});
+    }
   } catch (error) {
     if (error.status === 409) {
       appState.lastSavedSignature = signature;
@@ -1063,14 +1216,19 @@ function renderSavedEntries() {
 
   savedEntriesContainer.innerHTML = appState.savedEntries
     .map((entry) => {
+      const isPartial = !entry.complete;
       return `
-        <article class="saved-entry">
-          <p class="saved-entry__title">${escapeHtml(entry.name)}</p>
+        <article class="saved-entry${isPartial ? " saved-entry--partial" : ""}">
+          <p class="saved-entry__title">
+            ${isPartial ? '<span class="saved-entry__badge">Laufend</span>' : ""}
+            ${escapeHtml(entry.name)}
+          </p>
           <p class="saved-entry__meta">${escapeHtml(entry.fachabteilung)} • ${escapeHtml(entry.timestamp)}</p>
           <div class="saved-entry__actions">
-            <button class="link-button" type="button" data-open-id="${escapeAttribute(entry.id)}">
-              Öffnen
-            </button>
+            ${isPartial
+              ? `<button class="link-button link-button--primary" type="button" data-resume-id="${escapeAttribute(entry.id)}">Weiterführen</button>`
+              : `<button class="link-button" type="button" data-open-id="${escapeAttribute(entry.id)}">Öffnen</button>`
+            }
             <button class="link-button" type="button" data-copy-id="${escapeAttribute(entry.id)}">
               Kopieren
             </button>
@@ -1098,7 +1256,33 @@ function renderSavedEntries() {
       appState.collectedFields = entry.summary || {};
       appState.otherDetails = {};
       appState.mode = "complete";
+      appState.completionOrigin = "saved-entries";
       clearSaveFeedback();
+      // Switch to Erfassung tab
+      appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
+      appNav.querySelector("[data-tab='chat']").classList.add("app-nav__tab--active");
+      tabChat.hidden = false;
+      tabEntries.hidden = true;
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  savedEntriesContainer.querySelectorAll("[data-resume-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const entry = entryById.get(button.dataset.resumeId);
+      if (!entry) return;
+      appState.chatMessages = Array.isArray(entry.chatMessages) ? entry.chatMessages : [];
+      appState.collectedFields = entry.summary || {};
+      appState.auditNote = entry.auditNote || "";
+      appState.partialEntryId = entry.id;
+      appState._restoredFromSession = true;
+      appState.values = { ...buildInitialValues(), ...appState.collectedFields };
+      appState.mode = "chat";
+      appState.chatLoading = false;
+      appState.chatStreamingText = "";
+      clearSaveFeedback();
+      saveSession();
       // Switch to Erfassung tab
       appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
       appNav.querySelector("[data-tab='chat']").classList.add("app-nav__tab--active");
@@ -1180,6 +1364,45 @@ async function copyWithFeedback(btn, text) {
   window.setTimeout(() => {
     btn.innerHTML = original;
   }, 1400);
+}
+
+// ---------------------------------------------------------------------------
+// Session persistence (localStorage)
+// ---------------------------------------------------------------------------
+
+const SESSION_KEY = "berichtskatalog-session";
+
+function saveSession() {
+  try {
+    const data = {
+      chatMessages: appState.chatMessages,
+      collectedFields: appState.collectedFields,
+      auditNote: appState.auditNote,
+      partialEntryId: appState.partialEntryId,
+    };
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  } catch (_) {}
+}
+
+function clearSession() {
+  try { window.localStorage.removeItem(SESSION_KEY); } catch (_) {}
+}
+
+function tryRestoreSession() {
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.chatMessages) || data.chatMessages.length === 0) return;
+    appState.chatMessages = data.chatMessages;
+    appState.collectedFields = data.collectedFields || {};
+    appState.auditNote = data.auditNote || "";
+    appState.partialEntryId = data.partialEntryId || null;
+    appState.values = { ...buildInitialValues(), ...appState.collectedFields };
+    appState._restoredFromSession = true;
+  } catch (_) {
+    clearSession();
+  }
 }
 
 function escapeHtml(value) {
