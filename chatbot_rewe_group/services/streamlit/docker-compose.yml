@@ -1,0 +1,6 @@
+services:
+  yggdrasil-frontend:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    image: acryggdrasil.azurecr.io/yggdrasil-frontend:initial_version

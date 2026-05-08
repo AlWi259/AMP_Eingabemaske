@@ -1,0 +1,66 @@
+{
+  "topics": [
+    {
+      "id": "t1",
+      "scope": "Nutzungspraxis & qualitative Erkenntnisse",
+      "points": [
+        "Letzte konkrete Copilot-Nutzung (Critical Incident) – bitte Schritt für Schritt erzählen",
+        "Wahrgenommene Zeit-/Qualitätswirkung (Schätzung, vorher–nachher, Iterationen/Abstimmungen)",
+        "Situationen, in denen Copilot nicht gut funktioniert hat (Ursachen/Beispiele)",
+        "Bewährte Arbeitsmuster/Prompts und entstandene Workarounds",
+        "Nutzungsintensität (Häufigkeit/Sessions pro Woche, Dauer, Touchpoints – Schätzung)"
+      ],
+      "probing_limit": 4
+    },
+    {
+      "id": "t2",
+      "scope": "Zufriedenheit & Wirkung",
+      "points": [
+        "Einfluss von Copilot auf Zufriedenheit, Fokus oder Stress (konkrete Beispiele)",
+        "Gesamtfazit und Weiterempfehlung – warum/warum nicht?",
+        "Top-3 Verbesserungswünsche für spürbar mehr Wirkung"
+      ],
+      "probing_limit": 3
+    },
+    {
+      "id": "t3",
+      "scope": "Datenschutz & Compliance",
+      "points": [
+        "Konkrete Situationen, in denen Datenschutz/Compliance die Nutzung eingeschränkt hat",
+        "Einfluss dieser Bedenken auf Häufigkeit und Art der Nutzung",
+        "Benötigte Klarstellungen/Prozesse (Richtlinien, Freigaben, Transparenz)"
+      ],
+      "probing_limit": 3
+    },
+    {
+      "id": "t4",
+      "scope": "Enablement & Schulungspotenzial",
+      "points": [
+        "Erhaltene Unterstützungsformate (Trainings, Guides, Community) und deren Nutzen",
+        "Wünsche nach weiteren Lernbedarfen (Themen, Tiefe, bevorzugte Formate)",
+        "Bedarf an Vorlagen/Prompt-Bibliotheken/Beispielen",
+        "Konkrete Barrieren (Wissen, Zugang, Prozesse, UX)"
+      ],
+      "probing_limit": 3
+    },
+    {
+      "id": "t5",
+      "scope": "Alternativen & zusätzlicher Mehrwert",
+      "points": [
+        "Einsatzfälle, in denen alternative KI-Tools bessere Ergebnisse liefern (Beispiele)",
+        "Lücken in Copilot, die Alternativen aktuell schließen",
+        "Integrationsgrad/Wechselkosten zwischen Copilot und Alternativen"
+      ],
+      "probing_limit": 3
+    },
+    {
+      "id": "t6",
+      "scope": "Überschneidungen & Governance",
+      "points": [
+        "Funktionsdoppelungen zwischen Copilot und anderen Tools",
+        "Kriterien/Leitplanken zur Tool-Auswahl und wer entscheidet (Ownership/Prozess)"
+      ],
+      "probing_limit": 2
+    }
+  ]
+}

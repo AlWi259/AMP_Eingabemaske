@@ -1,0 +1,105 @@
+trigger:
+- dev
+- showcase
+- showcase_acc
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  azureSubscription: 'sc-yggdrasil-test'
+  azureContainerRegistry: 'acryggdrasil.azurecr.io'
+  acrJson: '{"loginServer":"acryggdrasil.azurecr.io", "id" : "/subscriptions/75bf2b0b-5d8a-4130-b0da-3a8b8f6e706a/resourceGroups/rg-yggdrasil-test/providers/Microsoft.ContainerRegistry/registries/acryggdrasil"}'
+  imageTag: '$(Build.SourceBranchName)-$(Build.BuildId)'
+
+stages:
+
+- stage: BuildAndPushContainer
+  displayName: "Build and Push Container"
+  condition: or(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), eq(variables['Build.SourceBranch'], 'refs/heads/showcase'), eq(variables['Build.SourceBranch'], 'refs/heads/showcase_acc'))
+  jobs:
+    - job: BuildPushImages
+      steps:
+      # Build & push frontend image
+      - task: DockerCompose@1
+        inputs:
+          containerregistrytype: 'Azure Container Registry'
+          azureSubscription: $(azureSubscription)
+          azureContainerRegistry: $(acrJson)
+          dockerComposeFile: '**/services/streamlit/docker-compose.yml'
+          action: 'Build services'
+          additionalImageTags: $(imageTag)
+        displayName: 'Build frontend image'
+      - task: DockerCompose@1
+        inputs:
+          containerregistrytype: 'Azure Container Registry'
+          azureSubscription: $(azureSubscription)
+          azureContainerRegistry: $(acrJson)
+          dockerComposeFile: '**/services/streamlit/docker-compose.yml'
+          action: 'Push services'
+          additionalImageTags: $(imageTag)
+        displayName: 'Push frontend image to ACR'
+
+      # Build & push backend image
+      - task: DockerCompose@1
+        inputs:
+          containerregistrytype: 'Azure Container Registry'
+          azureSubscription: $(azureSubscription)
+          azureContainerRegistry: $(acrJson)
+          dockerComposeFile: '**/services/backend/docker-compose.yml'
+          action: 'Build services'
+          additionalImageTags: $(imageTag)
+        displayName: 'Build backend image'
+      - task: DockerCompose@1
+        inputs:
+          containerregistrytype: 'Azure Container Registry'
+          azureSubscription: $(azureSubscription)
+          azureContainerRegistry: $(acrJson)
+          dockerComposeFile: '**/services/backend/docker-compose.yml'
+          action: 'Push services'
+          additionalImageTags: $(imageTag)
+        displayName: 'Push backend image to ACR'
+
+- stage: Deploy
+  displayName: "Deploy to Container Apps"
+  dependsOn: BuildAndPushContainer
+  condition: or(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), eq(variables['Build.SourceBranch'], 'refs/heads/showcase'), eq(variables['Build.SourceBranch'], 'refs/heads/showcase_acc'))
+  jobs:
+    - job: DeployBackendContainerApp
+      displayName: "Deploy Backend"
+      steps:
+      - task: AzureContainerApps@1
+        displayName: Deploy backend image
+        inputs:
+          azureSubscription: $(azureSubscription)
+          containerAppName: 'ca-yggdrasil-backend'
+          resourceGroup: 'rg-yggdrasil-test'
+          imageToDeploy: '$(azureContainerRegistry)/yggdrasil-backend:$(imageTag)'
+          environmentVariables: >
+            KEY_VAULT_URL=https://kv-yggdrasil-test01.vault.azure.net/
+            INTERVIEW_ID=copilot
+            ENVIRONMENT=prod
+            AzureWebJobsStorage=$(AZURE_WEBJOBS_STORAGE)
+
+    - job: DeployFrontendContainerApp
+      displayName: "Deploy Frontend"
+      steps:
+      - task: AzureContainerApps@1
+        displayName: Deploy frontend image
+        inputs:
+          azureSubscription: $(azureSubscription)
+          containerAppName: 'ca-yggdrasil-frontend'
+          resourceGroup: 'rg-yggdrasil-test'
+          imageToDeploy: '$(azureContainerRegistry)/yggdrasil-frontend:$(imageTag)'
+          environmentVariables: >
+            FUNCTION_AGENT_URL=https://ca-yggdrasil-backend.ashybay-42c03cb1.swedencentral.azurecontainerapps.io/api/interview_agent
+            FUNCTION_STATUS_URL=https://ca-yggdrasil-backend.ashybay-42c03cb1.swedencentral.azurecontainerapps.io/api/interview_status
+            FUNCTION_DELETE_URL=https://ca-yggdrasil-backend.ashybay-42c03cb1.swedencentral.azurecontainerapps.io/api/delete_interview_history
+            FUNCTION_SUMMARY_URL=https://ca-yggdrasil-backend.ashybay-42c03cb1.swedencentral.azurecontainerapps.io/api/get_summary_yggs
+            FUNCTION_SAVE_SUMMARY_URL=https://ca-yggdrasil-backend.ashybay-42c03cb1.swedencentral.azurecontainerapps.io/api/save_summary
+            FUNCTION_FINAL_SUMMARY_URL=https://ca-yggdrasil-backend.ashybay-42c03cb1.swedencentral.azurecontainerapps.io/api/generate_final_summary
+            FUNCTION_SAVE_FINAL_SUMMARY_URL=https://ca-yggdrasil-backend.ashybay-42c03cb1.swedencentral.azurecontainerapps.io/api/save_final_summary
+            STORAGE_ACCOUNT_NAME=styggdrasil
+            STORAGE_URL=https://styggdrasil.blob.core.windows.net
+            DEV_MODE=0
+            AzureWebJobsStorage=$(AZURE_WEBJOBS_STORAGE)

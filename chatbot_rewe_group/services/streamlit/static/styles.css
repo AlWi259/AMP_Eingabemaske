@@ -1,0 +1,531 @@
+.header-bar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 0;
+  border-bottom: 1px solid #E9EAEC;
+  background: #fff;
+  overflow: visible !important;
+}
+
+
+.header-bar img {
+  height: 42px;
+  object-fit: contain;
+  max-width: 100%;
+}
+
+/* General Page Styles */
+.page-wrap { max-width: 980px; margin: 0 auto; }
+
+.hero {
+  background: #FFFFFF; border: 1px solid #E9EAEC;
+  border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,.04);
+  padding: 26px 28px; /* etwas großzügiger */
+  margin-bottom: 14px;
+}
+.hero-inner {
+  display:flex; align-items:center; justify-content:space-between; gap: 28px;
+}
+.hero h1 {
+  margin:0 0 10px 0; font-size:2.2rem; color:#222222;
+}
+.subtitle { color:#707073; margin:0 0 14px 0; font-size:1.05rem; }
+.meta { display:flex; gap:18px; flex-wrap:wrap; color:#707073; margin:0; padding:0; list-style:none; }
+
+.cta-row { margin-top: 18px; }
+.stButton>button {
+  border-radius: 12px !important;
+  padding: .7rem 1.2rem !important;
+  font-weight: 600 !important;
+  background-color: #CC081F !important;
+  color: white !important;
+  border: none !important;
+}
+
+.section-space { height: 18px; }
+
+/* Steps-Grid */
+.steps {
+  display:grid; gap:22px; /* vertikaler Rhythmus bei Wrap */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin-top: 18px;
+}
+.step {
+  background:#fff; border:1px solid #E9EAEC; border-radius:14px;
+  box-shadow: 0 1px 6px rgba(0,0,0,.03); padding:20px; min-height:150px; /* gleiche optische Höhe */
+  display:flex; flex-direction:column; justify-content:flex-start;
+  overflow: visible !important; /* Verhindert Abschneiden */
+}
+.step h3 { margin:0 0 12px 0; font-size:1.05rem; color:#222222; letter-spacing: .1px; line-height: 1.4; /* feines Typo-Tuning */ }
+.step p  { margin:0; color:#707073; line-height: 1.6; }
+.badge {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:24px; height:24px; border-radius:999px; background:#CC081F; color:#fff; font-weight:700; font-size:.9rem;
+  margin-right:8px;
+}
+
+/* Sidebar Styles */
+section[data-testid="stSidebar"] {
+  background: #F7F7F8;
+  padding-top: 12px !important;
+}
+
+section[data-testid="stSidebar"] nav ul {
+    padding-top: 4px;
+}
+
+section[data-testid="stSidebar"] nav li {
+    margin-bottom: 4px;
+}
+
+section[data-testid="stSidebar"] nav a {
+    display: block;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: #222222;
+    text-decoration: none;
+    font-weight: 500;
+    transition: background-color 0.15s ease;
+}
+
+section[data-testid="stSidebar"] nav a:hover {
+    background-color: rgba(0,0,0,0.04);
+}
+
+section[data-testid="stSidebar"] nav a[aria-current="page"] {
+    background-color: #CC081F;
+    color: #fff !important;
+    font-weight: 700; /* eine Stufe kräftiger */
+    box-shadow: 0 2px 6px rgba(204, 8, 31, .2); /* leichte Tiefe */
+}
+
+.sidebar-brand {
+  background: #FFFFFF;
+  border: 1px solid #E9EAEC;
+  border-radius: 12px;
+  padding: 12px 14px 16px; /* etwas mehr Innenabstand */
+  margin: 0 10px 14px 10px;
+  margin-bottom: 18px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.03);
+  position: relative;
+  text-align: center;
+}
+
+.sidebar-brand::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: #CC081F;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.brand-caption {
+  font-size: 0.78rem;
+  color: #707073;
+  margin-bottom: 10px;
+}
+
+.brand-logos {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px; /* knapperes Gap wirkt ruhiger */
+}
+
+.brand-logos img {
+  max-height: 28px; /* harte Obergrenze gegen Ausreißer */
+  height: auto; /* kein hartes "height:28px" erzwingen */
+  max-width: 42%; /* gleichmäßigere Breite */
+  flex: 1 1 0; /* Logos teilen sich den Platz */
+  object-fit: contain;
+}
+/* bei sehr schmaler Sidebar: Logos stapeln */
+@media (max-width: 440px) {
+  .brand-logos { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .brand-logos img { max-width: 100%; }
+}
+
+/* Showcase-Infobox */
+.showcase-box {
+  border: 1px solid #E9EAEC;
+  background: #FFF8E5; /* heller Ton aus Highlight-Farbe */
+  border-left: 8px solid #FCC200; /* kräftiger gelber Akzentstreifen */
+  border-radius: 12px;
+  padding: 20px 22px; /* mehr Innenabstand */
+  margin: 20px 0;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.showcase-box-icon {
+  color: #CC081F; /* Rot als Akzent für Icon */
+  font-size: 2rem; /* deutlich größer */
+  line-height: 1;
+}
+
+.showcase-box-text {
+  color: #222;
+  font-size: 1.25rem;   /* größerer Text */
+  line-height: 1.6;
+  font-style: italic;   /* kursiv */
+}
+
+/* Chat Messages Styling */
+/* User Messages - both standard and custom avatars */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]),
+[data-testid="stChatMessage"]:has(img[alt="user avatar"]) {
+    background-color: #F7F7F8 !important;
+    border: 1px solid #E9EAEC !important;
+    border-left: 4px solid #CC081F !important;
+    border-radius: 12px !important;
+    padding: 12px !important;
+    margin-bottom: 12px !important;
+}
+
+/* Assistant Messages - both standard and custom avatars */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]),
+[data-testid="stChatMessage"]:has(img[alt="assistant avatar"]) {
+    background-color: #FFFFFF !important;
+    border: 1px solid #E9EAEC !important;
+    border-left: 4px solid #FCC200 !important;
+    border-radius: 12px !important;
+    padding: 12px !important;
+    margin-bottom: 12px !important;
+}
+
+/* Fallback: Target all chat messages */
+[data-testid="stChatMessage"] {
+    border-radius: 12px !important;
+    margin-bottom: 12px !important;
+}
+
+/* Text Area Styling */
+textarea {
+    border: 2px solid #E9EAEC !important;
+    border-radius: 8px !important;
+    padding: 16px !important;
+    font-size: 0.96rem !important;
+    line-height: 1.75 !important;
+    letter-spacing: 0.01em !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    transition: all 0.2s ease !important;
+    background-color: #FFFFFF !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    tab-size: 2 !important;
+}
+
+textarea:hover {
+    border-color: #D0D0D0 !important;
+}
+
+textarea:focus {
+    border-color: #CC081F !important;
+    box-shadow: 0 0 0 3px rgba(204, 8, 31, 0.1) !important;
+    outline: none !important;
+    background-color: #FFFEF9 !important;
+}
+
+/* Text area label styling */
+label:has(+ div textarea) {
+    font-weight: 600 !important;
+    color: #222222 !important;
+    margin-bottom: 8px !important;
+}
+
+/* Expander Styling */
+[data-testid="stExpander"] {
+    border: 1px solid #E9EAEC !important;
+    border-radius: 10px !important;
+    margin-bottom: 12px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04) !important;
+    overflow: hidden !important;
+    background-color: #FFFFFF !important;
+}
+
+/* Expander Header/Summary */
+[data-testid="stExpander"] details summary {
+    background-color: #F7F7F8 !important;
+    padding: 14px 16px !important;
+    font-weight: 600 !important;
+    color: #222222 !important;
+    transition: background-color 0.2s ease !important;
+    cursor: pointer !important;
+    border-bottom: none !important;
+}
+
+[data-testid="stExpander"] details summary:hover {
+    background-color: #FFF8E5 !important;
+}
+
+/* Expander when opened */
+[data-testid="stExpander"] details[open] summary {
+    background-color: #FFF8E5 !important;
+    border-bottom: 2px solid #FCC200 !important;
+}
+
+[data-testid="stExpander"] details[open] > summary {
+    background-color: #FFF8E5 !important;
+    border-bottom: 2px solid #FCC200 !important;
+}
+
+/* Expander content area */
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+    padding: 16px !important;
+    background-color: #FFFFFF !important;
+}
+
+/* Expander arrow icon */
+[data-testid="stExpander"] summary svg {
+    color: #CC081F !important;
+}
+
+/* Button Styling */
+/* Primary Buttons (Hauptaktionen) */
+button[kind="primary"],
+button[data-testid="baseButton-primary"] {
+    background-color: #CC081F !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 10px 20px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(204, 8, 31, 0.2) !important;
+}
+
+button[kind="primary"]:hover,
+button[data-testid="baseButton-primary"]:hover {
+    background-color: #A00619 !important;
+    box-shadow: 0 4px 8px rgba(204, 8, 31, 0.3) !important;
+    transform: translateY(-1px) !important;
+}
+
+button[kind="primary"]:active,
+button[data-testid="baseButton-primary"]:active {
+    transform: translateY(0) !important;
+    box-shadow: 0 1px 2px rgba(204, 8, 31, 0.2) !important;
+}
+
+/* Secondary Buttons (Abbrechen etc.) */
+button[kind="secondary"],
+button[data-testid="baseButton-secondary"] {
+    background-color: white !important;
+    color: #222222 !important;
+    border: 2px solid #E9EAEC !important;
+    border-radius: 8px !important;
+    padding: 10px 20px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}
+
+button[kind="secondary"]:hover,
+button[data-testid="baseButton-secondary"]:hover {
+    border-color: #CC081F !important;
+    color: #CC081F !important;
+    background-color: #FFF8E5 !important;
+}
+
+button[kind="secondary"]:active,
+button[data-testid="baseButton-secondary"]:active {
+    background-color: #FFF0CC !important;
+}
+
+/* Default/Standard Buttons */
+.stButton > button {
+    border-radius: 8px !important;
+    padding: 10px 20px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}
+
+/* Override existing button styles if needed */
+.stButton > button:not([kind="primary"]):not([kind="secondary"]) {
+    background-color: white !important;
+    color: #222222 !important;
+    border: 2px solid #E9EAEC !important;
+}
+
+.stButton > button:not([kind="primary"]):not([kind="secondary"]):hover {
+    border-color: #CC081F !important;
+    color: #CC081F !important;
+    background-color: #FFF8E5 !important;
+}
+
+/* Container Styling - Minimalistischer Ansatz */
+/* Entferne ALLE störenden Container-Borders */
+[data-testid="stVerticalBlock"] {
+    border: none !important;
+}
+
+/* Streamlit container with border=True - entfernen */
+div[data-testid="stVerticalBlock"][style*="border"] {
+    border: none !important;
+}
+
+/* Alle möglichen Border-Attribute überschreiben */
+[data-testid="stVerticalBlock"],
+[data-testid="stVerticalBlock"] > div,
+div[style*="border: 1px"] {
+    border: none !important;
+    border-width: 0 !important;
+}
+
+/* Nutze stattdessen subtile Schatten und Spacing für Separation */
+div[data-testid="stVerticalBlock"] > div[style*="border: 1px solid"] {
+    border: none !important;
+    background-color: #FFFFFF !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
+    padding: 20px !important;
+    margin-bottom: 20px !important;
+}
+
+/* Chat container - nur subtiler Schatten statt Border */
+div[data-testid="stVerticalBlock"]:has([data-testid="stChatMessage"]) {
+    border: none !important;
+    border-radius: 12px !important;
+    padding: 20px !important;
+    background-color: #FFFFFF !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
+    margin-bottom: 20px !important;
+}
+
+/* Zusammenfassungs-Container */
+div[data-testid="stVerticalBlock"]:has(> div > [data-testid="stExpander"]) {
+    border: none !important;
+    background-color: #FAFAFA !important;
+    border-radius: 12px !important;
+    padding: 20px !important;
+    margin-bottom: 20px !important;
+}
+
+/* Infoboxen Styling - Rewe Corporate Design */
+/* Hauptcontainer */
+div[data-testid="stAlert"],
+div[data-testid="stNotification"] {
+    border-radius: 8px !important;
+    padding: 16px !important;
+    margin: 16px 0 !important;
+    box-sizing: border-box !important;
+    width: calc(100% - 32px) !important;
+    max-width: 100% !important;
+}
+
+/* Innerer Container - Default (Info) - gelb */
+div[data-testid="stAlert"] > div,
+div[data-testid="stNotification"] > div {
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 12px 16px !important;
+    background-color: #FFF8E5 !important;
+    border-left: 4px solid #FCC200 !important;
+    box-sizing: border-box !important;
+}
+
+/* Icon und Text Farbe */
+div[data-testid="stAlert"] svg,
+div[data-testid="stAlert"] p {
+    color: #222222 !important;
+}
+
+/* Success Alerts - Grün/Mint mit grünem Akzent für bessere Sichtbarkeit */
+div[data-testid="stAlert"]:has([data-testid="stAlertContentSuccess"]) > div {
+    background-color: #E8F5E9 !important;
+    border-left: 4px solid #4CAF50 !important;
+    border: none !important;
+    border-left: 4px solid #4CAF50 !important;
+}
+
+div[data-testid="stAlert"]:has([data-testid="stAlertContentSuccess"]) [data-testid="stAlertContainer"] {
+    background-color: #E8F5E9 !important;
+    border-left: 4px solid #4CAF50 !important;
+}
+
+[data-testid="stAlertContentSuccess"] {
+    background-color: #E8F5E9 !important;
+}
+
+/* Error Alerts - Hellrot mit rotem Akzent */
+div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) > div {
+    background-color: #FFE5E8 !important;
+    border-left: 4px solid #CC081F !important;
+}
+
+div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) [data-testid="stAlertContainer"] {
+    background-color: #FFE5E8 !important;
+    border-left: 4px solid #CC081F !important;
+}
+
+[data-testid="stAlertContentError"] {
+    background-color: #FFE5E8 !important;
+}
+
+/* Warning Alerts - Gelb mit gelbem Akzent */
+div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) > div {
+    background-color: #FFF8E5 !important;
+    border: none !important;
+    border-left: 4px solid #FCC200 !important;
+}
+
+div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) [data-testid="stAlertContainer"] {
+    background-color: #FFF8E5 !important;
+    border-left: 4px solid #FCC200 !important;
+}
+
+[data-testid="stAlertContentWarning"] {
+    background-color: #FFF8E5 !important;
+}
+
+/* Info Alerts - Gelb */
+div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) > div {
+    background-color: #FFF8E5 !important;
+    border: none !important;
+    border-left: 4px solid #FCC200 !important;
+}
+
+div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) [data-testid="stAlertContainer"] {
+    background-color: #FFF8E5 !important;
+    border-left: 4px solid #FCC200 !important;
+}
+
+[data-testid="stAlertContentInfo"] {
+    background-color: #FFF8E5 !important;
+}
+
+/* Allgemeine Container-Beschränkung - NUR für spezifische Elemente */
+[data-testid="stVerticalBlock"] > [data-testid="stAlert"] {
+    max-width: 100% !important;
+}
+
+/* Kein overflow hidden für Streamlit-Container */
+[data-testid="stVerticalBlock"] {
+    overflow: visible !important;
+}
+
+[data-testid="stMarkdownContainer"] {
+    overflow: visible !important;
+}
+
+/* Avatar Images - Custom Avatars */
+[data-testid="stChatMessageAvatarUser"] img,
+[data-testid="stChatMessageAvatarAssistant"] img {
+    border-radius: 50% !important;
+    border: 2px solid #CC081F !important;
+    object-fit: cover !important;
+}
+
+/* Optional: Unterschiedliche Border-Farben für User/Assistant */
+[data-testid="stChatMessageAvatarUser"] img {
+    border-color: #CC081F !important;
+}
+
+[data-testid="stChatMessageAvatarAssistant"] img {
+    border-color: #FCC200 !important;
+}

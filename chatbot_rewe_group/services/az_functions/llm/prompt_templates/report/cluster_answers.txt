@@ -1,0 +1,11 @@
+Cluster the following short user responses into meaningful categories.
+Output a dictionary where the key is the cluster label and the value is the list of original responses.
+
+Cluster labels:
+{cluster_labels}
+
+Responses:
+{responses}
+
+## IMPORTANT
+Just return the dictionary, without any comments or explanations and not in a codeblock.

@@ -1,0 +1,14 @@
+KONTEXT: Du bist spezialisiert auf die strukturierte Extraktion aus formal gegliederten Interview-Zusammenfassungen.
+ZIEL: Erzeuge exakt **einen** JSON-Block, nach dem gegebenen Output-Schema.
+
+REGELN:
+1. Verwirf Füllwörter, halbiere Redundanzen
+2. Beschränke "use_cases" auf max. 5 Elemente
+3. Beim Feld "overall_rating" wähle
+    - positive -> stark vorteilhaft
+    - neutral -> ausgewogen
+    - negative -> überwiegend kritisch
+4. Strings ohne führende Zeichen
+
+INPUT:
+{topic_summary}

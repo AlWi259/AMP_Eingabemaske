@@ -1,0 +1,11 @@
+services:
+  backend:
+    build:
+      context: ../
+      dockerfile: backend/Dockerfile
+    image: acryggdrasil.azurecr.io/yggdrasil-backend:initial_version
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false

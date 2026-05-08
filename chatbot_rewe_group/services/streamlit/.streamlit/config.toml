@@ -1,0 +1,14 @@
+[theme]
+base = "light"
+primaryColor = "#CC081F"         # Akzent/CTA
+backgroundColor = "#FFFFFF"      # Hauptfläche
+secondaryBackgroundColor = "#FFF6F7"  # Karten/Sidebar
+textColor = "#222222"            # Fließtext
+font = "sans serif"
+[theme.sidebar]
+primaryColor="#cc081f"
+[client]
+showSidebarNavigation = false
+toolbarMode="minimal"
+[server]
+enableStaticServing = true

@@ -1,0 +1,4 @@
+Basierend auf den noch offenen Fragen und den bisherigen gesammelten Antworten des Nutzers, bitte wähle eine passende nächste Frage aus und beantworte offene Fragen, die möglicherweise vom Nutzer schon in vorherigen Fragen beantwortet wurden.
+
+Hier sind die noch offenen Fragen: {open_questions}
+Hier sind die bisherigen Antworten: {summaries}
