@@ -728,7 +728,15 @@ async function handleChatSubmit(event) {
             const msgs = document.querySelector("#chat-messages");
             if (msgs) msgs.scrollTop = msgs.scrollHeight;
           } else {
-            render();
+            const typingDots = document.querySelector(".chat-typing");
+            if (typingDots) {
+              const newBubble = document.createElement("div");
+              newBubble.className = "chat-bubble chat-bubble--assistant chat-bubble--streaming";
+              newBubble.innerHTML = renderChatMarkdown(appState.chatStreamingText);
+              typingDots.replaceWith(newBubble);
+              const msgs = document.querySelector("#chat-messages");
+              if (msgs) msgs.scrollTop = msgs.scrollHeight;
+            }
           }
         } else if (ev.type === "done") {
           if (ev.collectedFields && typeof ev.collectedFields === "object") {

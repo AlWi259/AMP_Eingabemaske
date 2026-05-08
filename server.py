@@ -305,10 +305,18 @@ def run_chat(payload: dict) -> dict[str, Any]:
                     collected.update(fields)
                 tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
             elif tc.name == "complete_interview":
-                complete = True
-                closing = tc.input.get("closing_message", "Erfassung abgeschlossen.")
-                final_text = " ".join(text_parts).strip() or closing
-                tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
+                missing = [k for k in _REQUIRED_KEYS if not collected.get(k) or collected[k] in ("-", "")]
+                if missing:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": f"ABGELEHNT: Noch nicht alle Pflichtfelder erfasst. Fehlende Felder: {', '.join(missing)}. Bitte diese noch erfragen."
+                    })
+                else:
+                    complete = True
+                    closing = tc.input.get("closing_message", "Erfassung abgeschlossen.")
+                    final_text = " ".join(text_parts).strip() or closing
+                    tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
 
         claude_messages.append({"role": "assistant", "content": [_block_to_dict(b) for b in response.content]})
         claude_messages.append({"role": "user", "content": tool_results})
@@ -390,12 +398,20 @@ def run_chat_stream(payload: dict):
                     collected.update(fields)
                 tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
             elif tc.name == "complete_interview":
-                complete = True
-                if not accumulated_text.strip():
-                    closing = tc.input.get("closing_message", "Erfassung abgeschlossen.")
-                    accumulated_text = closing
-                    yield {"type": "delta", "text": closing}
-                tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
+                missing = [k for k in _REQUIRED_KEYS if not collected.get(k) or collected[k] in ("-", "")]
+                if missing:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": f"ABGELEHNT: Noch nicht alle Pflichtfelder erfasst. Fehlende Felder: {', '.join(missing)}. Bitte diese noch erfragen."
+                    })
+                else:
+                    complete = True
+                    if not accumulated_text.strip():
+                        closing = tc.input.get("closing_message", "Erfassung abgeschlossen.")
+                        accumulated_text = closing
+                        yield {"type": "delta", "text": closing}
+                    tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": "OK"})
 
         claude_messages.append({"role": "assistant", "content": [_block_to_dict(b) for b in final_message.content]})
         claude_messages.append({"role": "user", "content": tool_results})
