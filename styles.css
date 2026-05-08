@@ -904,6 +904,28 @@ html[data-theme="dark"] .saved-entry {
   cursor: not-allowed;
 }
 
+.chat-end-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 10px;
+}
+
+.chat-end-btn {
+  background: none;
+  border: 1px solid var(--border-strong);
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.chat-end-btn:hover {
+  color: var(--error);
+  border-color: var(--error);
+}
+
 @media (max-width: 720px) {
   .chat-messages {
     height: min(480px, 58vh);

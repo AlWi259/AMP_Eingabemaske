@@ -67,7 +67,7 @@ _FIELD_META = [
     {"key": "aktualisierungsfrequenz","label": "Aktualisierungsfrequenz",   "required": True,  "default": ""},
     {"key": "datenaktualitaet",       "label": "Datenaktualität",           "required": True,  "default": ""},
     {"key": "approvalNachAenderung",  "label": "Approval nach Änderung",    "required": True,  "default": ""},
-    {"key": "letztesReview",          "label": "Letztes Review",            "required": False, "default": "Unbekannt"},
+    {"key": "letztesReview",          "label": "Letztes Review",            "required": False, "default": "03.2025"},
     {"key": "komplexitaet",           "label": "Komplexität",               "required": True,  "default": ""},
     {"key": "migrationsstatus",       "label": "Migrationsstatus",          "required": True,  "default": ""},
     {"key": "prioritaet",             "label": "Priorität",                 "required": True,  "default": ""},
@@ -139,11 +139,21 @@ Priorisierung:
 Notizen:
     bemerkungen – optional
 
+AKTIV NACHFRAGEN (auch wenn nicht spontan erwähnt):
+- Frage immer nach dem IT-Ansprechpartner (itAnsprechpartner), sofern nicht bereits genannt.
+- Frage aktiv nach Workspace / Ablageort (workspace), falls relevant.
+- Frage aktiv nach weiteren Datenquellen (weitereDatenquellen).
+- Frage aktiv nach Parametern / Filtern (parameterFilter).
+- Stelle am Ende des Interviews immer eine Frage nach Bemerkungen: "Gibt es noch etwas, das ich für den Katalog festhalten soll?"
+
 TECHNISCHE REGELN:
 - Ruf `update_fields` sofort auf, sobald du aus dem Gespräch einen Feldwert ableiten kannst. Nutze exakt die Optionswerte.
 - Wenn manuellerAufwand = "Kein Aufwand": setze aufwandKonkret = "-".
 - Wenn alle Pflichtfelder erfasst sind: ruf `complete_interview` auf mit einer natürlichen Abschlussformulierung.
-- Optionale Felder nur erfassen, wenn sie sich im Gespräch ergeben.
+- Wenn der Nutzer kein Datum für letztesReview nennt, verwende "03.2025" als Standardwert.
+- Erfinde keine Informationen. Trage nur Werte ein, die der Gesprächspartner explizit genannt hat.
+- Biete nie an, jemanden zu kontaktieren oder Nachrichten in seinem Namen zu versenden.
+- Jedes Gespräch ist unabhängig. Übertrage keine Informationen aus vorherigen Gesprächen.
 {audit_section}
 Bereits erfasste Felder:
 {collected_json}

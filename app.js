@@ -4,7 +4,7 @@ const API_BASE_URL =
 
 const CHAT_GREETING =
   "Guten Tag! Ich nehme heute Ihren Bericht für den Katalog auf. " +
-  "Mit wem habe ich das Vergnügen?";
+  "Fangen wir direkt an: Wie heißt der Bericht, den wir heute erfassen?";
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
@@ -282,7 +282,7 @@ const fieldDefinitions = [
     type: "monthText",
     category: "Qualität & Betrieb",
     required: false,
-    defaultValue: "Unbekannt",
+    defaultValue: "03.2025",
     placeholder: "z. B. 03.2025",
   },
   {
@@ -368,6 +368,7 @@ const appState = {
 };
 
 applyTheme(appState.theme);
+tryRestoreSession();
 themeToggle.addEventListener("click", toggleTheme);
 appNav.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-tab]");
@@ -525,6 +526,9 @@ function renderChat() {
             : ""
         }
       </div>
+      <div class="chat-end-row">
+        <button type="button" class="chat-end-btn" id="chat-end-button">Erfassung abbrechen</button>
+      </div>
       <form class="chat-input-row" id="chat-form" ${appState.chatLoading ? "inert" : ""}>
         <textarea
           id="chat-input"
@@ -563,6 +567,24 @@ function renderChat() {
 
   if (form) {
     form.addEventListener("submit", handleChatSubmit);
+  }
+
+  const endBtn = document.querySelector("#chat-end-button");
+  if (endBtn) {
+    endBtn.addEventListener("click", () => {
+      if (!window.confirm("Erfassung wirklich abbrechen? Alle bisherigen Eingaben gehen verloren.")) return;
+      appState.mode = "chat";
+      appState.chatMessages = [];
+      appState.chatLoading = false;
+      appState.chatStreamingText = "";
+      appState.collectedFields = {};
+      appState.auditNote = "";
+      appState.values = buildInitialValues();
+      appState.otherDetails = {};
+      clearSaveFeedback();
+      clearSession();
+      render();
+    });
   }
 
   if (input) {
@@ -632,6 +654,7 @@ function startMicRecognition(inputEl, formEl) {
   recognition = new SpeechRecognition();
   recognition.lang = "de-DE";
   recognition.interimResults = false;
+  recognition.continuous = true;
   recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
@@ -793,7 +816,12 @@ async function handleChatSubmit(event) {
           const finalText = appState.chatStreamingText.trim() || "Ich habe Ihre Antwort verarbeitet.";
           appState.chatMessages.push({ role: "assistant", content: finalText });
           appState.chatStreamingText = "";
-          if (ev.complete) appState.mode = "complete";
+          if (ev.complete) {
+            appState.mode = "complete";
+            clearSession();
+          } else {
+            saveSession();
+          }
 
         } else if (ev.type === "error") {
           const errMsg = ev.message || "Ein Fehler ist aufgetreten.";
@@ -907,6 +935,7 @@ function renderCompletion() {
     appState.values = buildInitialValues();
     appState.otherDetails = {};
     clearSaveFeedback();
+    clearSession();
     render();
   });
 }
@@ -1180,6 +1209,49 @@ async function copyWithFeedback(btn, text) {
   window.setTimeout(() => {
     btn.innerHTML = original;
   }, 1400);
+}
+
+// ---------------------------------------------------------------------------
+// Session persistence (localStorage)
+// ---------------------------------------------------------------------------
+
+const SESSION_KEY = "berichtskatalog-session";
+
+function saveSession() {
+  try {
+    const data = {
+      chatMessages: appState.chatMessages,
+      collectedFields: appState.collectedFields,
+      auditNote: appState.auditNote,
+    };
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  } catch (_) {}
+}
+
+function clearSession() {
+  try { window.localStorage.removeItem(SESSION_KEY); } catch (_) {}
+}
+
+function tryRestoreSession() {
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.chatMessages) || data.chatMessages.length === 0) return;
+    const resume = window.confirm(
+      "Es gibt eine gespeicherte Erfassung. Möchten Sie dort weitermachen?"
+    );
+    if (resume) {
+      appState.chatMessages = data.chatMessages;
+      appState.collectedFields = data.collectedFields || {};
+      appState.auditNote = data.auditNote || "";
+      appState.values = { ...buildInitialValues(), ...appState.collectedFields };
+    } else {
+      clearSession();
+    }
+  } catch (_) {
+    clearSession();
+  }
 }
 
 function escapeHtml(value) {
