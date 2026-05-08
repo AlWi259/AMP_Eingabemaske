@@ -145,7 +145,7 @@ TECHNISCHE REGELN:
 - Wenn manuellerAufwand = "Kein Aufwand": setze aufwandKonkret = "-".
 - Wenn alle Pflichtfelder erfasst sind: ruf `complete_interview` auf mit einer natürlichen Abschlussformulierung.
 - Optionale Felder nur erfassen, wenn sie sich im Gespräch ergeben.
-
+{audit_section}
 Bereits erfasste Felder:
 {collected_json}
 
@@ -217,13 +217,62 @@ _CHAT_TOOLS = [
 ]
 
 
-def _build_chat_system(collected: dict) -> str:
+def _build_chat_system(collected: dict, audit_note: str = "") -> str:
     filled = {k for k, v in collected.items() if v and v not in ("-", "")}
     missing = [k for k in _REQUIRED_KEYS if k not in filled]
+    audit_section = ""
+    if audit_note:
+        audit_section = (
+            f"\nSTEUERUNGS-HINWEIS (vom letzten Turn): {audit_note}\n"
+            "Richte deine nächste Frage auf das oben genannte Feld aus – "
+            "es sei denn, der Gesprächspartner bringt gerade etwas anderes Wichtiges auf.\n"
+        )
     return _SYSTEM_TEMPLATE.format(
         collected_json=json.dumps(collected, ensure_ascii=False, indent=2),
         missing=", ".join(missing) if missing else "Alle Pflichtfelder erfasst!",
+        audit_section=audit_section,
     )
+
+
+def _run_field_audit(
+    last_user_msg: str,
+    last_assistant_msg: str,
+    collected: dict,
+    client: Any,
+) -> str:
+    """Lightweight second Haiku call: detects evasion and returns a one-line steering note."""
+    filled = {k for k, v in collected.items() if v and v not in ("-", "")}
+    missing_fields = [
+        f"{f['key']} ({f['label']})"
+        for f in _FIELD_META
+        if f["required"] and f["key"] not in filled
+    ]
+    if not missing_fields:
+        return ""
+
+    missing_str = "\n".join(f"- {m}" for m in missing_fields)
+    prompt = (
+        "Du prüfst ein laufendes Interview zur Berichtskatalog-Erfassung.\n\n"
+        f"Noch fehlende Pflichtfelder:\n{missing_str}\n\n"
+        "Letzter Gesprächsturn:\n"
+        f"Interviewer: {last_assistant_msg}\n"
+        f"Nutzer: {last_user_msg}\n\n"
+        "AUFGABE: Entscheide in EINEM Satz, welches Pflichtfeld beim nächsten Turn prioritär "
+        "angesprochen werden soll. Hat der Interviewer nach einem Feld gefragt und der Nutzer "
+        "ausgewichen oder vage geantwortet? Dann das gleiche Feld wiederholen.\n\n"
+        'Format: "PRIORITÄT: [feldkey] ([Label]) — [Begründung max. 8 Wörter]"'
+    )
+
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=80,
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text.strip()
+    except Exception:
+        return ""
 
 
 def _block_to_dict(block: Any) -> dict[str, Any]:
@@ -257,6 +306,7 @@ def run_chat(payload: dict) -> dict[str, Any]:
 
     raw_messages = payload.get("messages", [])
     collected: dict[str, Any] = dict(payload.get("collectedFields", {}))
+    audit_note: str = str(payload.get("auditNote", "")).strip()
 
     if not isinstance(raw_messages, list):
         raise ValueError("messages muss eine Liste sein.")
@@ -279,7 +329,7 @@ def run_chat(payload: dict) -> dict[str, Any]:
             model="claude-haiku-4-5-20251001",
             max_tokens=1024,
             temperature=0.75,
-            system=_build_chat_system(collected),
+            system=_build_chat_system(collected, audit_note),
             messages=claude_messages,
             tools=_CHAT_TOOLS,
         )
@@ -324,10 +374,23 @@ def run_chat(payload: dict) -> dict[str, Any]:
         if complete:
             break
 
+    # Run field auditor to steer the next turn
+    last_user = next(
+        (m["content"] for m in reversed(raw_messages) if m.get("role") == "user"),
+        "",
+    )
+    new_audit_note = "" if complete else _run_field_audit(
+        last_user_msg=last_user,
+        last_assistant_msg=final_text,
+        collected=collected,
+        client=client,
+    )
+
     result: dict[str, Any] = {
         "reply": final_text or "Ich habe Ihre Antwort verarbeitet.",
         "collectedFields": collected,
         "complete": complete,
+        "auditNote": new_audit_note,
     }
 
     if complete:
@@ -349,6 +412,7 @@ def run_chat_stream(payload: dict):
 
     raw_messages = payload.get("messages", [])
     collected: dict[str, Any] = dict(payload.get("collectedFields", {}))
+    audit_note: str = str(payload.get("auditNote", "")).strip()
 
     if not isinstance(raw_messages, list):
         yield {"type": "error", "message": "messages muss eine Liste sein."}
@@ -375,7 +439,7 @@ def run_chat_stream(payload: dict):
             model="claude-haiku-4-5-20251001",
             max_tokens=1024,
             temperature=0.75,
-            system=_build_chat_system(collected),
+            system=_build_chat_system(collected, audit_note),
             messages=claude_messages,
             tools=_CHAT_TOOLS,
         ) as stream:
@@ -424,10 +488,23 @@ def run_chat_stream(payload: dict):
             yield {"type": "delta", "text": " "}
             accumulated_text += " "
 
+    # Run field auditor to steer the next turn
+    last_user = next(
+        (m["content"] for m in reversed(raw_messages) if m.get("role") == "user"),
+        "",
+    )
+    new_audit_note = "" if complete else _run_field_audit(
+        last_user_msg=last_user,
+        last_assistant_msg=accumulated_text,
+        collected=collected,
+        client=client,
+    )
+
     result: dict[str, Any] = {
         "type": "done",
         "collectedFields": collected,
         "complete": complete,
+        "auditNote": new_audit_note,
     }
     if complete:
         result["exportMarkdown"] = _build_export_markdown(collected)

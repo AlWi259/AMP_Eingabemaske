@@ -364,6 +364,7 @@ const appState = {
   chatLoading: false,
   chatStreamingText: "",
   collectedFields: {},
+  auditNote: "",
 };
 
 applyTheme(appState.theme);
@@ -691,6 +692,7 @@ async function handleChatSubmit(event) {
       body: JSON.stringify({
         messages: appState.chatMessages,
         collectedFields: appState.collectedFields,
+        auditNote: appState.auditNote,
       }),
     });
 
@@ -743,6 +745,7 @@ async function handleChatSubmit(event) {
             appState.collectedFields = ev.collectedFields;
             appState.values = { ...buildInitialValues(), ...ev.collectedFields };
           }
+          appState.auditNote = ev.auditNote || "";
           const finalText = appState.chatStreamingText.trim() || "Ich habe Ihre Antwort verarbeitet.";
           appState.chatMessages.push({ role: "assistant", content: finalText });
           appState.chatStreamingText = "";
@@ -850,6 +853,7 @@ function renderCompletion() {
     appState.chatLoading = false;
     appState.chatStreamingText = "";
     appState.collectedFields = {};
+    appState.auditNote = "";
     appState.values = buildInitialValues();
     appState.otherDetails = {};
     clearSaveFeedback();
