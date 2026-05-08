@@ -39,7 +39,6 @@ DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 
 # ---------------------------------------------------------------------------
@@ -152,38 +151,6 @@ Bereits erfasste Felder:
 Noch offene Pflichtfelder: {missing}
 """
 
-_REALTIME_TOOLS = [
-    {
-        "type": "function",
-        "name": "update_fields",
-        "description": "Speichert extrahierte Feldwerte aus dem Gespräch. Sofort aufrufen wenn ein Wert klar ist.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "fields": {
-                    "type": "object",
-                    "description": "Key-Value-Paare: Feldschlüssel → Wert (bei Select-Feldern exakt die vorgegebenen Optionswerte)",
-                }
-            },
-            "required": ["fields"],
-        },
-    },
-    {
-        "type": "function",
-        "name": "complete_interview",
-        "description": "Aufrufen wenn alle Pflichtfelder erfasst sind. Schließt die Erfassung ab.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "closing_message": {
-                    "type": "string",
-                    "description": "Kurze Abschlussbestätigung für den Nutzer",
-                }
-            },
-            "required": ["closing_message"],
-        },
-    },
-]
 
 _CHAT_TOOLS = [
     {
@@ -828,9 +795,6 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/api/realtime-session":
-            self._handle_realtime_session()
-            return
         if self._require_auth():
             return
         if parsed.path == "/api/chat":
@@ -873,49 +837,6 @@ class AppHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": "Report not found."}, status=HTTPStatus.NOT_FOUND)
             return
         self._send_json({"deleted": True, "id": report_id})
-
-    def _handle_realtime_session(self) -> None:
-        if not OPENAI_API_KEY:
-            self._send_json(
-                {"error": "OPENAI_API_KEY nicht gesetzt."},
-                status=HTTPStatus.SERVICE_UNAVAILABLE,
-            )
-            return
-        try:
-            payload = self._read_json_body()
-        except Exception:
-            payload = {}
-        collected = dict(payload.get("collectedFields", {}))
-        session_body = json.dumps({
-            "model": "gpt-4o-realtime-preview",
-            "voice": "shimmer",
-            "instructions": _build_chat_system(collected),
-            "tools": _REALTIME_TOOLS,
-            "tool_choice": "auto",
-            "input_audio_transcription": {"model": "whisper-1"},
-            "turn_detection": {"type": "server_vad"},
-            "modalities": ["text", "audio"],
-        }, ensure_ascii=False).encode("utf-8")
-        from urllib.request import Request, urlopen
-        from urllib.error import URLError
-        req = Request(
-            "https://api.openai.com/v1/realtime/sessions",
-            data=session_body,
-            headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read())
-            self._send_json({"token": data["client_secret"]["value"]})
-        except URLError as error:
-            self._send_json(
-                {"error": f"OpenAI-Verbindung fehlgeschlagen: {error}"},
-                status=HTTPStatus.BAD_GATEWAY,
-            )
 
     def _handle_chat(self) -> None:
         try:
