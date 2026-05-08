@@ -53,7 +53,7 @@ _FIELD_META = [
     {"key": "berichtstyp",            "label": "Berichtstyp",               "required": True,  "default": ""},
     {"key": "besitzer",               "label": "Besitzer",                  "required": True,  "default": ""},
     {"key": "fachabteilung",          "label": "Fachabteilung",             "required": True,  "default": ""},
-    {"key": "itAnsprechpartner",      "label": "IT-Ansprechpartner",        "required": False, "default": "-"},
+    {"key": "itAnsprechpartner",      "label": "IT-Ansprechpartner",        "required": True,  "default": ""},
     {"key": "primaereDatenquelle",    "label": "Primäre Datenquelle",       "required": True,  "default": ""},
     {"key": "weitereDatenquellen",    "label": "Weitere Datenquellen",      "required": False, "default": "-"},
     {"key": "aktuellesTool",          "label": "Aktuelles Tool",            "required": True,  "default": ""},
@@ -67,7 +67,7 @@ _FIELD_META = [
     {"key": "aktualisierungsfrequenz","label": "Aktualisierungsfrequenz",   "required": True,  "default": ""},
     {"key": "datenaktualitaet",       "label": "Datenaktualität",           "required": True,  "default": ""},
     {"key": "approvalNachAenderung",  "label": "Approval nach Änderung",    "required": True,  "default": ""},
-    {"key": "letztesReview",          "label": "Letztes Review",            "required": False, "default": "03.2025"},
+    {"key": "letztesReview",          "label": "Letztes Review",            "required": True,  "default": "03.2025"},
     {"key": "komplexitaet",           "label": "Komplexität",               "required": True,  "default": ""},
     {"key": "migrationsstatus",       "label": "Migrationsstatus",          "required": True,  "default": ""},
     {"key": "prioritaet",             "label": "Priorität",                 "required": True,  "default": ""},
@@ -108,7 +108,7 @@ Identifikation:
 Verantwortung:
   * besitzer – Wer ist fachlich verantwortlich?
   * fachabteilung – Exakt eine Option: Controlling | Finanzen | Vertrieb | Marketing | Einkauf | Logistik | Produktion | Personal / HR | IT | Geschäftsführung | Qualitätssicherung | Rechtswesen | Sonstiges
-    itAnsprechpartner – optional
+  * itAnsprechpartner – Wer ist der IT-Ansprechpartner für diesen Bericht?
 
 Technologie & Daten:
   * primaereDatenquelle – Exakt eine Option: SQL Server | Power BI Dataflow | Oracle | SAP HANA | MySQL | PostgreSQL | Azure SQL | Snowflake | BigQuery | Excel / CSV | SharePoint-Liste | REST API | OData | SAP BW | Sonstiges
@@ -126,7 +126,7 @@ Qualität & Betrieb:
   * datenaktualitaet – Exakt eine Option: Aktuell | Veraltet
   * approvalNachAenderung – Exakt eine Option: Kein Approval | Fachbereich | Management | Regulatorisch
     aufwandKonkret – optional, nur wenn manuellerAufwand nicht "Kein Aufwand"
-    letztesReview – optional, Format MM.JJJJ
+  * letztesReview – Wann fand das letzte Review statt? Format MM.JJJJ. Wenn der Nutzer es nicht weiß: 03.2025 eintragen.
 
 Power BI Migration:
   * komplexitaet – Exakt eine Option: Niedrig | Mittel | Hoch | Sehr hoch
@@ -140,7 +140,6 @@ Notizen:
     bemerkungen – optional
 
 AKTIV NACHFRAGEN (auch wenn nicht spontan erwähnt):
-- Frage immer nach dem IT-Ansprechpartner (itAnsprechpartner), sofern nicht bereits genannt.
 - Frage aktiv nach Workspace / Ablageort (workspace), falls relevant.
 - Frage aktiv nach weiteren Datenquellen (weitereDatenquellen).
 - Frage aktiv nach Parametern / Filtern (parameterFilter).
@@ -150,7 +149,6 @@ TECHNISCHE REGELN:
 - Ruf `update_fields` sofort auf, sobald du aus dem Gespräch einen Feldwert ableiten kannst. Nutze exakt die Optionswerte.
 - Wenn manuellerAufwand = "Kein Aufwand": setze aufwandKonkret = "-".
 - Wenn alle Pflichtfelder erfasst sind: ruf `complete_interview` auf mit einer natürlichen Abschlussformulierung.
-- Wenn der Nutzer kein Datum für letztesReview nennt, verwende "03.2025" als Standardwert.
 - Erfinde keine Informationen. Trage nur Werte ein, die der Gesprächspartner explizit genannt hat.
 - Biete nie an, jemanden zu kontaktieren oder Nachrichten in seinem Namen zu versenden.
 - Jedes Gespräch ist unabhängig. Übertrage keine Informationen aus vorherigen Gesprächen.
@@ -520,6 +518,9 @@ class ReportStore:
         fachabteilung = str(payload.get("fachabteilung", "")).strip() or "-"
         timestamp = str(payload.get("timestamp", "")).strip() or _display_timestamp()
         summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+        complete = 0 if payload.get("complete") is False else 1
+        chat_messages = payload.get("chatMessages") if isinstance(payload.get("chatMessages"), list) else []
+        audit_note = str(payload.get("auditNote", "")).strip()
 
         if not signature or not export_markdown:
             raise ValueError("signature and exportMarkdown are required")
@@ -529,10 +530,10 @@ class ReportStore:
 
         if self._use_postgres:
             self._pg_insert(report_id, signature, name, fachabteilung, timestamp,
-                            export_markdown, summary, now)
+                            export_markdown, summary, now, complete, chat_messages, audit_note)
         else:
             self._sqlite_insert(report_id, signature, name, fachabteilung, timestamp,
-                                export_markdown, summary, now)
+                                export_markdown, summary, now, complete, chat_messages, audit_note)
 
         return {
             "id": report_id,
@@ -542,6 +543,9 @@ class ReportStore:
             "timestamp": timestamp,
             "exportMarkdown": export_markdown,
             "summary": summary,
+            "complete": bool(complete),
+            "chatMessages": chat_messages,
+            "auditNote": audit_note,
         }
 
     def delete_report(self, report_id: str) -> bool:
@@ -569,10 +573,21 @@ class ReportStore:
                         timestamp TEXT NOT NULL,
                         export_markdown TEXT NOT NULL,
                         summary_json TEXT NOT NULL,
+                        complete INTEGER NOT NULL DEFAULT 1,
+                        chat_messages_json TEXT NOT NULL DEFAULT '[]',
+                        audit_note TEXT NOT NULL DEFAULT '',
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     )
                 """)
+                for _col, _def in [
+                    ("complete", "INTEGER NOT NULL DEFAULT 1"),
+                    ("chat_messages_json", "TEXT NOT NULL DEFAULT '[]'"),
+                    ("audit_note", "TEXT NOT NULL DEFAULT ''"),
+                ]:
+                    cur.execute(f"""
+                        ALTER TABLE reports ADD COLUMN IF NOT EXISTS {_col} {_def}
+                    """)
             conn.commit()
 
     def _pg_list(self) -> list[dict[str, Any]]:
@@ -581,7 +596,8 @@ class ReportStore:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("""
                     SELECT id, signature, name, fachabteilung, timestamp,
-                           export_markdown, summary_json
+                           export_markdown, summary_json, complete,
+                           chat_messages_json, audit_note
                     FROM reports
                     ORDER BY created_at DESC
                 """)
@@ -590,7 +606,9 @@ class ReportStore:
 
     def _pg_insert(self, report_id: str, signature: str, name: str,
                    fachabteilung: str, timestamp: str, export_markdown: str,
-                   summary: dict[str, Any], now: str) -> None:
+                   summary: dict[str, Any], now: str,
+                   complete: int = 1, chat_messages: list = None,
+                   audit_note: str = "") -> None:
         import psycopg2
         try:
             with psycopg2.connect(DATABASE_URL) as conn:  # type: ignore[name-defined]
@@ -598,12 +616,15 @@ class ReportStore:
                     cur.execute("""
                         INSERT INTO reports (
                             id, signature, name, fachabteilung, timestamp,
-                            export_markdown, summary_json, created_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            export_markdown, summary_json, complete,
+                            chat_messages_json, audit_note, created_at, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         report_id, signature, name, fachabteilung, timestamp,
                         export_markdown, json.dumps(summary, ensure_ascii=False),
-                        now, now,
+                        complete,
+                        json.dumps(chat_messages or [], ensure_ascii=False),
+                        audit_note, now, now,
                     ))
                 conn.commit()
         except psycopg2.errors.UniqueViolation:  # type: ignore[attr-defined]
@@ -638,17 +659,31 @@ class ReportStore:
                     timestamp TEXT NOT NULL,
                     export_markdown TEXT NOT NULL,
                     summary_json TEXT NOT NULL,
+                    complete INTEGER NOT NULL DEFAULT 1,
+                    chat_messages_json TEXT NOT NULL DEFAULT '[]',
+                    audit_note TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
             """)
+            # Migration for existing DBs that lack the new columns
+            for _col, _def in [
+                ("complete", "INTEGER NOT NULL DEFAULT 1"),
+                ("chat_messages_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("audit_note", "TEXT NOT NULL DEFAULT ''"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE reports ADD COLUMN {_col} {_def}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
             conn.commit()
 
     def _sqlite_list(self) -> list[dict[str, Any]]:
         with self._sqlite_connect() as conn:
             rows = conn.execute("""
                 SELECT id, signature, name, fachabteilung, timestamp,
-                       export_markdown, summary_json
+                       export_markdown, summary_json, complete,
+                       chat_messages_json, audit_note
                 FROM reports
                 ORDER BY created_at DESC
             """).fetchall()
@@ -656,18 +691,23 @@ class ReportStore:
 
     def _sqlite_insert(self, report_id: str, signature: str, name: str,
                        fachabteilung: str, timestamp: str, export_markdown: str,
-                       summary: dict[str, Any], now: str) -> None:
+                       summary: dict[str, Any], now: str,
+                       complete: int = 1, chat_messages: list = None,
+                       audit_note: str = "") -> None:
         try:
             with self._sqlite_connect() as conn:
                 conn.execute("""
                     INSERT INTO reports (
                         id, signature, name, fachabteilung, timestamp,
-                        export_markdown, summary_json, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        export_markdown, summary_json, complete,
+                        chat_messages_json, audit_note, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     report_id, signature, name, fachabteilung, timestamp,
                     export_markdown, json.dumps(summary, ensure_ascii=False),
-                    now, now,
+                    complete,
+                    json.dumps(chat_messages or [], ensure_ascii=False),
+                    audit_note, now, now,
                 ))
                 conn.commit()
         except sqlite3.IntegrityError as error:
@@ -734,6 +774,10 @@ def _row_to_report(row: dict[str, Any]) -> dict[str, Any]:
         summary = json.loads(row["summary_json"])
     except (json.JSONDecodeError, KeyError):
         summary = {}
+    try:
+        chat_messages = json.loads(row.get("chat_messages_json", "[]"))
+    except (json.JSONDecodeError, TypeError):
+        chat_messages = []
     return {
         "id": row["id"],
         "signature": row["signature"],
@@ -742,6 +786,9 @@ def _row_to_report(row: dict[str, Any]) -> dict[str, Any]:
         "timestamp": row["timestamp"],
         "exportMarkdown": row["export_markdown"],
         "summary": summary if isinstance(summary, dict) else {},
+        "complete": bool(row.get("complete", 1)),
+        "chatMessages": chat_messages if isinstance(chat_messages, list) else [],
+        "auditNote": str(row.get("audit_note", "")),
     }
 
 
