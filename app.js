@@ -364,6 +364,7 @@ const appState = {
   chatLoading: false,
   chatStreamingText: "",
   collectedFields: {},
+  auditNote: "",
 };
 
 applyTheme(appState.theme);
@@ -671,18 +672,69 @@ function startMicRecognition(inputEl, formEl) {
   recognition.start();
 }
 
+function _chatAppendBubble(role, html) {
+  const msgs = document.querySelector("#chat-messages");
+  if (!msgs) return null;
+  const el = document.createElement("div");
+  el.className = `chat-bubble chat-bubble--${role}`;
+  el.innerHTML = html;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return el;
+}
+
+function _chatShowLoading() {
+  const msgs = document.querySelector("#chat-messages");
+  if (!msgs) return;
+  const el = document.createElement("div");
+  el.className = "chat-typing";
+  el.innerHTML = '<span class="chat-typing__dot"></span><span class="chat-typing__dot"></span><span class="chat-typing__dot"></span>';
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  const form = document.querySelector("#chat-form");
+  if (form) form.inert = true;
+  const input = document.querySelector("#chat-input");
+  if (input) { input.disabled = true; input.value = ""; autoResizeTextarea(input); }
+}
+
+function _chatFinalize(complete) {
+  // Remove blinking cursor from streaming bubble
+  document.querySelector(".chat-bubble--streaming")?.classList.remove("chat-bubble--streaming");
+
+  if (complete) {
+    render();
+    return;
+  }
+
+  const form = document.querySelector("#chat-form");
+  if (form) form.inert = false;
+  const input = document.querySelector("#chat-input");
+  if (input) { input.disabled = false; input.focus(); }
+}
+
+function _chatShowError(msg) {
+  document.querySelector(".chat-typing")?.remove();
+  document.querySelector(".chat-bubble--streaming")?.remove();
+  _chatAppendBubble("assistant", escapeHtml(msg));
+  const form = document.querySelector("#chat-form");
+  if (form) form.inert = false;
+  const input = document.querySelector("#chat-input");
+  if (input) { input.disabled = false; input.focus(); }
+}
+
 async function handleChatSubmit(event) {
   event.preventDefault();
 
   const input = document.querySelector("#chat-input");
   const text = input ? input.value.trim() : "";
-
   if (!text || appState.chatLoading) return;
 
   appState.chatMessages.push({ role: "user", content: text });
   appState.chatLoading = true;
   appState.chatStreamingText = "";
-  render();
+
+  _chatAppendBubble("user", escapeHtml(text));
+  _chatShowLoading();
 
   try {
     const response = await fetch(`${API_BASE_URL}/chat/stream`, {
@@ -691,6 +743,7 @@ async function handleChatSubmit(event) {
       body: JSON.stringify({
         messages: appState.chatMessages,
         collectedFields: appState.collectedFields,
+        auditNote: appState.auditNote,
       }),
     });
 
@@ -722,34 +775,37 @@ async function handleChatSubmit(event) {
 
         if (ev.type === "delta") {
           appState.chatStreamingText += ev.text;
-          const bubble = document.querySelector(".chat-bubble--streaming");
-          if (bubble) {
-            bubble.innerHTML = renderChatMarkdown(appState.chatStreamingText);
-            const msgs = document.querySelector("#chat-messages");
-            if (msgs) msgs.scrollTop = msgs.scrollHeight;
-          } else {
+          let bubble = document.querySelector(".chat-bubble--streaming");
+          if (!bubble) {
             const typingDots = document.querySelector(".chat-typing");
+            bubble = document.createElement("div");
+            bubble.className = "chat-bubble chat-bubble--assistant chat-bubble--streaming";
             if (typingDots) {
-              const newBubble = document.createElement("div");
-              newBubble.className = "chat-bubble chat-bubble--assistant chat-bubble--streaming";
-              newBubble.innerHTML = renderChatMarkdown(appState.chatStreamingText);
-              typingDots.replaceWith(newBubble);
-              const msgs = document.querySelector("#chat-messages");
-              if (msgs) msgs.scrollTop = msgs.scrollHeight;
+              typingDots.replaceWith(bubble);
+            } else {
+              document.querySelector("#chat-messages")?.appendChild(bubble);
             }
           }
+          bubble.innerHTML = renderChatMarkdown(appState.chatStreamingText);
+          const msgs = document.querySelector("#chat-messages");
+          if (msgs) msgs.scrollTop = msgs.scrollHeight;
+
         } else if (ev.type === "done") {
           if (ev.collectedFields && typeof ev.collectedFields === "object") {
             appState.collectedFields = ev.collectedFields;
             appState.values = { ...buildInitialValues(), ...ev.collectedFields };
           }
+          appState.auditNote = ev.auditNote || "";
           const finalText = appState.chatStreamingText.trim() || "Ich habe Ihre Antwort verarbeitet.";
           appState.chatMessages.push({ role: "assistant", content: finalText });
           appState.chatStreamingText = "";
           if (ev.complete) appState.mode = "complete";
+
         } else if (ev.type === "error") {
-          appState.chatMessages.push({ role: "assistant", content: ev.message || "Ein Fehler ist aufgetreten." });
+          const errMsg = ev.message || "Ein Fehler ist aufgetreten.";
+          appState.chatMessages.push({ role: "assistant", content: errMsg });
           appState.chatStreamingText = "";
+          _chatShowError(errMsg);
         }
       }
     }
@@ -760,10 +816,13 @@ async function handleChatSubmit(event) {
         : "Entschuldigung, es ist ein Fehler aufgetreten. Bitte erneut versuchen.";
     appState.chatMessages.push({ role: "assistant", content: msg });
     appState.chatStreamingText = "";
+    _chatShowError(msg);
+    appState.chatLoading = false;
+    return;
   }
 
   appState.chatLoading = false;
-  render();
+  _chatFinalize(appState.mode === "complete");
 }
 
 // ---------------------------------------------------------------------------
@@ -850,6 +909,7 @@ function renderCompletion() {
     appState.chatLoading = false;
     appState.chatStreamingText = "";
     appState.collectedFields = {};
+    appState.auditNote = "";
     appState.values = buildInitialValues();
     appState.otherDetails = {};
     clearSaveFeedback();
@@ -903,7 +963,7 @@ function downloadMarkdown(markdown, berichtsname) {
     .toLowerCase()
     .replaceAll(/[^a-z0-9äöüß]+/gi, "-")
     .replaceAll(/^-+|-+$/g, "") || "berichtskatalog";
-  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const blob = new Blob(["﻿" + markdown], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
