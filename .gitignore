@@ -3,7 +3,11 @@ data/
 .env
 node_modules/
 package-lock.json
+package.json
 skills-lock.json
 .agents/
 .claude/
 vscode-chat-customizations-evaluation/
+.DS_Store
+*.vtt
+example.html
