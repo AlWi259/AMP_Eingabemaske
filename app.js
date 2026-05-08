@@ -365,6 +365,8 @@ const appState = {
   collectedFields: {},
   auditNote: "",
   partialEntryId: null,
+  completionOrigin: "chat",
+  _restoredFromSession: false,
 };
 
 applyTheme(appState.theme);
@@ -852,7 +854,16 @@ async function handleChatSubmit(event) {
           appState.chatStreamingText = "";
           if (ev.complete) {
             appState.mode = "complete";
+            appState.completionOrigin = "chat";
             clearSession();
+            // Auto-delete partial entry from DB now that interview is complete
+            if (appState.partialEntryId) {
+              const oldPartialId = appState.partialEntryId;
+              appState.partialEntryId = null;
+              removeSavedEntry(oldPartialId).then(() => {
+                appState.savedEntries = appState.savedEntries.filter((e) => e.id !== oldPartialId);
+              }).catch(() => {});
+            }
           } else {
             saveSession();
           }
@@ -997,7 +1008,18 @@ function renderCompletion() {
   document.querySelector("#summary-back-button").addEventListener("click", () => {
     clearSaveFeedback();
     appState.mode = "chat";
-    render();
+    if (appState.completionOrigin === "saved-entries") {
+      appState.completionOrigin = "chat";
+      // Navigate back to the entries tab
+      appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
+      appNav.querySelector("[data-tab='entries']").classList.add("app-nav__tab--active");
+      tabChat.hidden = true;
+      tabEntries.hidden = false;
+      renderSavedEntries();
+    } else {
+      appState.completionOrigin = "chat";
+      render();
+    }
   });
 
   document.querySelector("#copy-button").addEventListener("click", async (event) => {
@@ -1060,6 +1082,13 @@ async function saveCurrentReport(signature, exportMarkdown) {
     appState.savedEntriesError = "";
     appState.lastSavedSignature = signature;
     setStatus("Bericht gespeichert.");
+    // Clean up partial entry if it still exists
+    if (appState.partialEntryId) {
+      const oldId = appState.partialEntryId;
+      appState.partialEntryId = null;
+      appState.savedEntries = appState.savedEntries.filter((e) => e.id !== oldId);
+      removeSavedEntry(oldId).catch(() => {});
+    }
   } catch (error) {
     if (error.status === 409) {
       appState.lastSavedSignature = signature;
@@ -1187,7 +1216,7 @@ function renderSavedEntries() {
 
   savedEntriesContainer.innerHTML = appState.savedEntries
     .map((entry) => {
-      const isPartial = entry.complete === false;
+      const isPartial = !entry.complete;
       return `
         <article class="saved-entry${isPartial ? " saved-entry--partial" : ""}">
           <p class="saved-entry__title">
@@ -1227,6 +1256,7 @@ function renderSavedEntries() {
       appState.collectedFields = entry.summary || {};
       appState.otherDetails = {};
       appState.mode = "complete";
+      appState.completionOrigin = "saved-entries";
       clearSaveFeedback();
       // Switch to Erfassung tab
       appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
