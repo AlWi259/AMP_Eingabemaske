@@ -963,7 +963,7 @@ function downloadMarkdown(markdown, berichtsname) {
     .toLowerCase()
     .replaceAll(/[^a-z0-9äöüß]+/gi, "-")
     .replaceAll(/^-+|-+$/g, "") || "berichtskatalog";
-  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const blob = new Blob(["﻿" + markdown], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
