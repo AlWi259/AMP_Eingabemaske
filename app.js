@@ -890,6 +890,55 @@ async function handleChatSubmit(event) {
 
   appState.chatLoading = false;
   _chatFinalize(appState.mode === "complete");
+  if (appState.mode === "complete") {
+    _autoSaveReport();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-save on interview completion
+// ---------------------------------------------------------------------------
+
+async function _autoSaveReport() {
+  const exportMarkdown = buildExportMarkdown();
+  const signature = exportMarkdown;
+
+  // Already saved (e.g. duplicate call)
+  if (appState.lastSavedSignature === signature) return;
+
+  const summary = buildNormalizedSummary();
+  const payload = {
+    signature,
+    name: summary.berichtsname || "Unbenannter Bericht",
+    fachabteilung: summary.fachabteilung || "-",
+    timestamp: new Date().toLocaleString("de-DE"),
+    exportMarkdown,
+    summary,
+    complete: true,
+  };
+
+  try {
+    const savedEntry = await createSavedEntry(payload);
+    appState.savedEntries.unshift(savedEntry);
+    appState.savedEntriesError = "";
+    appState.lastSavedSignature = signature;
+    // Clean up any remaining partial entry
+    if (appState.partialEntryId) {
+      const oldId = appState.partialEntryId;
+      appState.partialEntryId = null;
+      appState.savedEntries = appState.savedEntries.filter((e) => e.id !== oldId);
+      removeSavedEntry(oldId).catch(() => {});
+    }
+    // Refresh completion screen so "Speichern" button shows as already saved
+    if (appState.mode === "complete") render();
+  } catch (error) {
+    if (error.status === 409) {
+      // Already in DB — mark locally as saved
+      appState.lastSavedSignature = signature;
+      if (appState.mode === "complete") render();
+    }
+    // Other errors: silent — user can still manually save via the button
+  }
 }
 
 // ---------------------------------------------------------------------------
