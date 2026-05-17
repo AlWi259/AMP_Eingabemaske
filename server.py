@@ -148,7 +148,9 @@ AKTIV NACHFRAGEN (auch wenn nicht spontan erwähnt):
 TECHNISCHE REGELN:
 - Ruf `update_fields` sofort auf, sobald du aus dem Gespräch einen Feldwert ableiten kannst. Nutze exakt die Optionswerte.
 - Wenn manuellerAufwand = "Kein Aufwand": setze aufwandKonkret = "-".
-- Wenn alle Pflichtfelder erfasst sind: ruf `complete_interview` auf mit einer natürlichen Abschlussformulierung. Die closing_message darf NICHT sagen, der Bericht sei "gespeichert" – sage stattdessen, dass die Erfassung abgeschlossen ist.
+- Ruf `complete_interview` AUSSCHLIESSLICH auf, wenn "Noch offene Pflichtfelder" unten "Alle Pflichtfelder erfasst!" zeigt. Solange auch nur ein Pflichtfeld fehlt, darfst du NICHT abschließen – frage stattdessen aktiv nach dem fehlenden Feld.
+- Prüfe vor dem Abschluss nochmals explizit: Sind wirklich alle Felder in der Liste "Noch offene Pflichtfelder" abgehakt? Wenn nein: weiterfragen.
+- Die closing_message darf NICHT sagen, der Bericht sei "gespeichert" – sage stattdessen, dass die Erfassung abgeschlossen ist.
 - Erfinde keine Informationen. Trage nur Werte ein, die der Gesprächspartner explizit genannt hat.
 - Biete nie an, jemanden zu kontaktieren oder Nachrichten in seinem Namen zu versenden.
 - Jedes Gespräch ist unabhängig. Übertrage keine Informationen aus vorherigen Gesprächen.
@@ -548,6 +550,40 @@ class ReportStore:
             "auditNote": audit_note,
         }
 
+    def update_report(self, report_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        name = str(payload.get("name", "")).strip() or "Unbenannter Bericht"
+        fachabteilung = str(payload.get("fachabteilung", "")).strip() or "-"
+        timestamp = str(payload.get("timestamp", "")).strip() or _utc_timestamp()
+        export_markdown = str(payload.get("exportMarkdown", "")).strip()
+        summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+        complete = 0 if payload.get("complete") is False else 1
+        chat_messages = payload.get("chatMessages") if isinstance(payload.get("chatMessages"), list) else []
+        audit_note = str(payload.get("auditNote", "")).strip()
+        now = _utc_timestamp()
+
+        if self._use_postgres:
+            updated = self._pg_update(report_id, name, fachabteilung, timestamp,
+                                      export_markdown, summary, now, complete, chat_messages, audit_note)
+        else:
+            updated = self._sqlite_update(report_id, name, fachabteilung, timestamp,
+                                          export_markdown, summary, now, complete, chat_messages, audit_note)
+            if updated:
+                self._sync_json_file()
+
+        if not updated:
+            return None
+        return {
+            "id": report_id,
+            "name": name,
+            "fachabteilung": fachabteilung,
+            "timestamp": timestamp,
+            "exportMarkdown": export_markdown,
+            "summary": summary,
+            "complete": bool(complete),
+            "chatMessages": chat_messages,
+            "auditNote": audit_note,
+        }
+
     def delete_report(self, report_id: str) -> bool:
         if self._use_postgres:
             return self._pg_delete(report_id)
@@ -639,6 +675,28 @@ class ReportStore:
             conn.commit()
         return deleted
 
+    def _pg_update(self, report_id: str, name: str, fachabteilung: str, timestamp: str,
+                   export_markdown: str, summary: dict[str, Any], now: str,
+                   complete: int = 1, chat_messages: list = None, audit_note: str = "") -> bool:
+        import psycopg2
+        with psycopg2.connect(DATABASE_URL) as conn:  # type: ignore[name-defined]
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE reports SET
+                        name=%s, fachabteilung=%s, timestamp=%s,
+                        export_markdown=%s, summary_json=%s, complete=%s,
+                        chat_messages_json=%s, audit_note=%s, updated_at=%s
+                    WHERE id=%s
+                """, (
+                    name, fachabteilung, timestamp,
+                    export_markdown, json.dumps(summary, ensure_ascii=False), complete,
+                    json.dumps(chat_messages or [], ensure_ascii=False), audit_note, now,
+                    report_id,
+                ))
+                updated = cur.rowcount > 0
+            conn.commit()
+        return updated
+
     # ------------------------------------------------------------------
     # SQLite backend
     # ------------------------------------------------------------------
@@ -716,6 +774,25 @@ class ReportStore:
     def _sqlite_delete(self, report_id: str) -> bool:
         with self._sqlite_connect() as conn:
             cursor = conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+            conn.commit()
+        return cursor.rowcount > 0
+
+    def _sqlite_update(self, report_id: str, name: str, fachabteilung: str, timestamp: str,
+                       export_markdown: str, summary: dict[str, Any], now: str,
+                       complete: int = 1, chat_messages: list = None, audit_note: str = "") -> bool:
+        with self._sqlite_connect() as conn:
+            cursor = conn.execute("""
+                UPDATE reports SET
+                    name=?, fachabteilung=?, timestamp=?,
+                    export_markdown=?, summary_json=?, complete=?,
+                    chat_messages_json=?, audit_note=?, updated_at=?
+                WHERE id=?
+            """, (
+                name, fachabteilung, timestamp,
+                export_markdown, json.dumps(summary, ensure_ascii=False), complete,
+                json.dumps(chat_messages or [], ensure_ascii=False), audit_note, now,
+                report_id,
+            ))
             conn.commit()
         return cursor.rowcount > 0
 
@@ -877,6 +954,29 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         self._send_json({"entry": entry}, status=HTTPStatus.CREATED)
 
+    def do_PUT(self) -> None:
+        if self._require_auth():
+            return
+        parsed = urlparse(self.path)
+        prefix = "/api/reports/"
+        if not parsed.path.startswith(prefix):
+            self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+            return
+        report_id = parsed.path.removeprefix(prefix).strip()
+        if not report_id:
+            self._send_json({"error": "Missing report id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            payload = self._read_json_body()
+            entry = STORE.update_report(report_id, payload)
+        except (ValueError, json.JSONDecodeError) as error:
+            self._send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if entry is None:
+            self._send_json({"error": "Report not found."}, status=HTTPStatus.NOT_FOUND)
+            return
+        self._send_json({"entry": entry})
+
     def do_DELETE(self) -> None:
         if self._require_auth():
             return
@@ -970,7 +1070,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def _write_cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
 

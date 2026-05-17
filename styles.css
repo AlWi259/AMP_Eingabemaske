@@ -946,6 +946,13 @@ html[data-theme="dark"] .saved-entry {
   padding-top: 10px;
 }
 
+.chat-last-saved {
+  font-size: 0.75rem;
+  color: var(--text-muted, var(--text-soft));
+  margin-right: auto;
+  opacity: 0.75;
+}
+
 .chat-save-partial-btn {
   background: none;
   border: 1px solid var(--border-strong);
@@ -963,6 +970,27 @@ html[data-theme="dark"] .saved-entry {
 }
 
 .chat-save-partial-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-save-exit-btn {
+  background: none;
+  border: 1px solid var(--brand);
+  color: var(--brand);
+  font-size: 0.82rem;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.chat-save-exit-btn:hover:not([disabled]) {
+  background: var(--brand);
+  color: #fff;
+}
+
+.chat-save-exit-btn[disabled] {
   opacity: 0.45;
   cursor: not-allowed;
 }

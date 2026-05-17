@@ -367,6 +367,7 @@ const appState = {
   partialEntryId: null,
   completionOrigin: "chat",
   _restoredFromSession: false,
+  lastAutoSavedAt: null,
 };
 
 applyTheme(appState.theme);
@@ -415,6 +416,14 @@ async function createSavedEntry(entry) {
   const data = await requestJson(`${API_BASE_URL}/reports`, {
     method: "POST",
     body: JSON.stringify(entry),
+  });
+  return data.entry;
+}
+
+async function updateSavedEntry(entryId, payload) {
+  const data = await requestJson(`${API_BASE_URL}/reports/${encodeURIComponent(entryId)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
   });
   return data.entry;
 }
@@ -487,10 +496,13 @@ function getVisibleFields() {
 function render() {
   if (appState.mode === "complete") {
     renderCompletion();
+    if (appState.completionOrigin !== "saved-entries") {
+      renderSavedEntries();
+    }
   } else {
     renderChat();
+    renderSavedEntries();
   }
-  renderSavedEntries();
 }
 
 // ---------------------------------------------------------------------------
@@ -534,8 +546,10 @@ function renderChat() {
         }
       </div>
       <div class="chat-end-row">
+        <button type="button" class="chat-end-btn" id="chat-end-button">Abbrechen</button>
+        <span class="chat-last-saved" id="chat-last-saved">${appState.lastAutoSavedAt ? "Zuletzt gespeichert: " + _formatSavedTime(appState.lastAutoSavedAt) : ""}</span>
         <button type="button" class="chat-save-partial-btn" id="chat-save-partial-button" ${appState.chatLoading ? "disabled" : ""}>Zwischenspeichern</button>
-        <button type="button" class="chat-end-btn" id="chat-end-button">Erfassung abbrechen</button>
+        <button type="button" class="chat-save-exit-btn" id="chat-save-exit-button" ${appState.chatLoading ? "disabled" : ""}>Speichern &amp; beenden</button>
       </div>
       <form class="chat-input-row" id="chat-form" ${appState.chatLoading ? "inert" : ""}>
         <textarea
@@ -580,10 +594,11 @@ function renderChat() {
   const endBtn = document.querySelector("#chat-end-button");
   if (endBtn) {
     endBtn.addEventListener("click", async () => {
-      if (!window.confirm("Erfassung wirklich abbrechen? Alle bisherigen Eingaben gehen verloren.")) return;
-      if (appState.partialEntryId) {
-        try { await removeSavedEntry(appState.partialEntryId); } catch (_) {}
-      }
+      const hasSaved = Boolean(appState.partialEntryId);
+      const msg = hasSaved
+        ? "Sitzung beenden? Der zwischengespeicherte Stand bleibt in \"Gespeicherte Einträge\" erhalten."
+        : "Erfassung abbrechen? Nicht gespeicherte Eingaben gehen verloren.";
+      if (!window.confirm(msg)) return;
       appState.mode = "chat";
       appState.chatMessages = [];
       appState.chatLoading = false;
@@ -591,6 +606,7 @@ function renderChat() {
       appState.collectedFields = {};
       appState.auditNote = "";
       appState.partialEntryId = null;
+      appState.lastAutoSavedAt = null;
       appState._restoredFromSession = false;
       appState.values = buildInitialValues();
       appState.otherDetails = {};
@@ -603,6 +619,33 @@ function renderChat() {
   const savePartialBtn = document.querySelector("#chat-save-partial-button");
   if (savePartialBtn) {
     savePartialBtn.addEventListener("click", () => handleSavePartial(savePartialBtn));
+  }
+
+  const saveExitBtn = document.querySelector("#chat-save-exit-button");
+  if (saveExitBtn) {
+    saveExitBtn.addEventListener("click", async () => {
+      saveExitBtn.disabled = true;
+      saveExitBtn.textContent = "Wird gespeichert…";
+      await handleSavePartial(saveExitBtn);
+      appState.mode = "chat";
+      appState.chatMessages = [];
+      appState.chatLoading = false;
+      appState.chatStreamingText = "";
+      appState.collectedFields = {};
+      appState.auditNote = "";
+      appState.partialEntryId = null;
+      appState.lastAutoSavedAt = null;
+      appState._restoredFromSession = false;
+      appState.values = buildInitialValues();
+      appState.otherDetails = {};
+      clearSaveFeedback();
+      clearSession();
+      appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
+      appNav.querySelector("[data-tab='entries']").classList.add("app-nav__tab--active");
+      tabChat.hidden = true;
+      tabEntries.hidden = false;
+      render();
+    });
   }
 
   const discardBtn = document.querySelector("#discard-session-btn");
@@ -866,6 +909,7 @@ async function handleChatSubmit(event) {
             }
           } else {
             saveSession();
+            _autoSavePartial();
           }
 
         } else if (ev.type === "error") {
@@ -901,17 +945,14 @@ async function handleChatSubmit(event) {
 
 async function _autoSaveReport() {
   const exportMarkdown = buildExportMarkdown();
-  const signature = exportMarkdown;
-
-  // Already saved (e.g. duplicate call)
-  if (appState.lastSavedSignature === signature) return;
+  if (appState.lastSavedSignature === exportMarkdown) return;
 
   const summary = buildNormalizedSummary();
   const payload = {
-    signature,
+    signature: exportMarkdown,
     name: summary.berichtsname || "Unbenannter Bericht",
     fachabteilung: summary.fachabteilung || "-",
-    timestamp: new Date().toLocaleString("de-DE"),
+    timestamp: new Date().toISOString(),
     exportMarkdown,
     summary,
     complete: true,
@@ -921,7 +962,7 @@ async function _autoSaveReport() {
     const savedEntry = await createSavedEntry(payload);
     appState.savedEntries.unshift(savedEntry);
     appState.savedEntriesError = "";
-    appState.lastSavedSignature = signature;
+    appState.lastSavedSignature = exportMarkdown;
     // Clean up any remaining partial entry
     if (appState.partialEntryId) {
       const oldId = appState.partialEntryId;
@@ -929,12 +970,12 @@ async function _autoSaveReport() {
       appState.savedEntries = appState.savedEntries.filter((e) => e.id !== oldId);
       removeSavedEntry(oldId).catch(() => {});
     }
-    // Refresh completion screen so "Speichern" button shows as already saved
+    setStatus("Bericht wurde automatisch gespeichert.", "success");
     if (appState.mode === "complete") render();
   } catch (error) {
     if (error.status === 409) {
-      // Already in DB — mark locally as saved
-      appState.lastSavedSignature = signature;
+      appState.lastSavedSignature = exportMarkdown;
+      setStatus("Bericht wurde automatisch gespeichert.", "success");
       if (appState.mode === "complete") render();
     }
     // Other errors: silent — user can still manually save via the button
@@ -952,31 +993,32 @@ async function handleSavePartial(btn) {
   btn.textContent = "Wird gespeichert…";
 
   try {
-    // Remove previous partial entry for this session before creating a new one
-    if (appState.partialEntryId) {
-      try { await removeSavedEntry(appState.partialEntryId); } catch (_) {}
-      appState.partialEntryId = null;
-    }
-
-    const name = appState.collectedFields.berichtsname || "Laufende Erfassung";
-    const fachabteilung = appState.collectedFields.fachabteilung || "-";
-    const sig = "partial_" + generateId();
-
-    const entry = await createSavedEntry({
-      signature: sig,
-      name,
-      fachabteilung,
-      timestamp: new Date().toLocaleString("de-DE"),
+    const partialPayload = {
+      name: appState.collectedFields.berichtsname || "Laufende Erfassung",
+      fachabteilung: appState.collectedFields.fachabteilung || "-",
+      timestamp: new Date().toISOString(),
       exportMarkdown: buildExportMarkdown(),
       summary: appState.collectedFields,
       complete: false,
       chatMessages: appState.chatMessages,
       auditNote: appState.auditNote,
-    });
+    };
 
-    appState.partialEntryId = entry.id;
-    appState.savedEntries = [entry, ...appState.savedEntries.filter((e) => e.id !== entry.id)];
+    let entry;
+    if (appState.partialEntryId) {
+      entry = await updateSavedEntry(appState.partialEntryId, partialPayload);
+      appState.savedEntries = appState.savedEntries.map((e) =>
+        e.id === appState.partialEntryId ? entry : e
+      );
+    } else {
+      entry = await createSavedEntry({ ...partialPayload, signature: "partial_" + generateId() });
+      appState.partialEntryId = entry.id;
+      appState.savedEntries = [entry, ...appState.savedEntries];
+    }
+
+    appState.lastAutoSavedAt = new Date();
     saveSession();
+    _updateSavedTimeIndicator();
 
     btn.textContent = "Gespeichert ✓";
     window.setTimeout(() => {
@@ -989,6 +1031,58 @@ async function handleSavePartial(btn) {
       btn.textContent = originalText;
       btn.disabled = false;
     }, 1800);
+  }
+}
+
+function _formatSavedTime(date) {
+  return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr";
+}
+
+function _formatEntryTimestamp(ts) {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleString("de-DE", {
+    day: "numeric", month: "numeric", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
+function _updateSavedTimeIndicator() {
+  const el = document.querySelector("#chat-last-saved");
+  if (el && appState.lastAutoSavedAt) {
+    el.textContent = "Zuletzt gespeichert: " + _formatSavedTime(appState.lastAutoSavedAt);
+  }
+}
+
+async function _autoSavePartial() {
+  if (appState.chatMessages.length === 0) return;
+  try {
+    const partialPayload = {
+      name: appState.collectedFields.berichtsname || "Laufende Erfassung",
+      fachabteilung: appState.collectedFields.fachabteilung || "-",
+      timestamp: new Date().toISOString(),
+      exportMarkdown: buildExportMarkdown(),
+      summary: appState.collectedFields,
+      complete: false,
+      chatMessages: appState.chatMessages,
+      auditNote: appState.auditNote,
+    };
+    let entry;
+    if (appState.partialEntryId) {
+      entry = await updateSavedEntry(appState.partialEntryId, partialPayload);
+      appState.savedEntries = appState.savedEntries.map((e) =>
+        e.id === appState.partialEntryId ? entry : e
+      );
+    } else {
+      entry = await createSavedEntry({ ...partialPayload, signature: "partial_" + generateId() });
+      appState.partialEntryId = entry.id;
+      appState.savedEntries = [entry, ...appState.savedEntries];
+    }
+    appState.lastAutoSavedAt = new Date();
+    saveSession();
+    _updateSavedTimeIndicator();
+  } catch (_) {
+    // silent — user can still manually save
   }
 }
 
@@ -1005,8 +1099,10 @@ function renderCompletion() {
   const exportMarkdown = buildExportMarkdown();
   const signature = exportMarkdown;
   const alreadySaved = appState.lastSavedSignature === signature;
+  // Render into entries container when opened from saved-entries, otherwise into chat area
+  const target = appState.completionOrigin === "saved-entries" ? savedEntriesContainer : assistantContent;
 
-  assistantContent.innerHTML = `
+  target.innerHTML = `
     <article class="completion-card">
       <h2>Zusammenfassung</h2>
       <p class="completion-card__copy">
@@ -1102,6 +1198,11 @@ function renderCompletion() {
     appState.otherDetails = {};
     clearSaveFeedback();
     clearSession();
+    appState.completionOrigin = "chat";
+    appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
+    appNav.querySelector("[data-tab='chat']").classList.add("app-nav__tab--active");
+    tabChat.hidden = false;
+    tabEntries.hidden = true;
     render();
   });
 }
@@ -1120,7 +1221,7 @@ async function saveCurrentReport(signature, exportMarkdown) {
     signature,
     name: summary.berichtsname || "Unbenannter Bericht",
     fachabteilung: summary.fachabteilung || "-",
-    timestamp: new Date().toLocaleString("de-DE"),
+    timestamp: new Date().toISOString(),
     exportMarkdown,
     summary,
   };
@@ -1269,10 +1370,10 @@ function renderSavedEntries() {
       return `
         <article class="saved-entry${isPartial ? " saved-entry--partial" : ""}">
           <p class="saved-entry__title">
-            ${isPartial ? '<span class="saved-entry__badge">Laufend</span>' : ""}
+            ${isPartial ? `<span class="saved-entry__badge">Laufend · ${escapeHtml(_formatEntryTimestamp(entry.timestamp))}</span>` : ""}
             ${escapeHtml(entry.name)}
           </p>
-          <p class="saved-entry__meta">${escapeHtml(entry.fachabteilung)} • ${escapeHtml(entry.timestamp)}</p>
+          <p class="saved-entry__meta">${escapeHtml(entry.fachabteilung)} • ${escapeHtml(_formatEntryTimestamp(entry.timestamp))}</p>
           <div class="saved-entry__actions">
             ${isPartial
               ? `<button class="link-button link-button--primary" type="button" data-resume-id="${escapeAttribute(entry.id)}">Weiterführen</button>`
@@ -1307,11 +1408,6 @@ function renderSavedEntries() {
       appState.mode = "complete";
       appState.completionOrigin = "saved-entries";
       clearSaveFeedback();
-      // Switch to Erfassung tab
-      appNav.querySelectorAll(".app-nav__tab").forEach((t) => t.classList.remove("app-nav__tab--active"));
-      appNav.querySelector("[data-tab='chat']").classList.add("app-nav__tab--active");
-      tabChat.hidden = false;
-      tabEntries.hidden = true;
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
@@ -1373,17 +1469,20 @@ function renderSavedEntries() {
       }
       try {
         await removeSavedEntry(reportId);
-        appState.savedEntries = appState.savedEntries.filter((item) => item.id !== reportId);
-        if (!appState.savedEntries.some((item) => item.signature === appState.lastSavedSignature)) {
-          appState.lastSavedSignature = "";
-        }
-        renderSavedEntries();
       } catch (error) {
-        button.textContent = "Fehler";
-        window.setTimeout(() => {
-          button.textContent = "Löschen";
-        }, 1400);
+        if (error.status !== 404) {
+          button.textContent = "Fehler";
+          window.setTimeout(() => {
+            button.textContent = "Löschen";
+          }, 1400);
+          return;
+        }
       }
+      appState.savedEntries = appState.savedEntries.filter((item) => item.id !== reportId);
+      if (!appState.savedEntries.some((item) => item.signature === appState.lastSavedSignature)) {
+        appState.lastSavedSignature = "";
+      }
+      renderSavedEntries();
     });
   });
 }
